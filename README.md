@@ -1,4 +1,5 @@
-(base) lil-Euclid-10:sel810emu phar$ python sel810emu.py asr33_bootloader.bin 
+<pre>
+lil-Euclid-10:sel810emu phar$ python sel810emu.py asr33_bootloader.bin 
 006000 CEU
 asr33 command 2048
 006002 AIP
@@ -12,3 +13,4 @@ asr33 read 104
 
 
 i dont know why im writing this
+</pre>
