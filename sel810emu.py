@@ -479,8 +479,8 @@ class SEL810Shell(cmd.Cmd):
 		pass
 		
 if __name__ == '__main__':
-	file= sys.argv[1]
+#	file= sys.argv[1]
 
-shell = SEL810Shell()
+	shell = SEL810Shell()
 #while shell.exit_flag == False:
-print(shell.cmdloop())
+	print(shell.cmdloop())
