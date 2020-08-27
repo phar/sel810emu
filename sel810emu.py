@@ -3,6 +3,12 @@ import threading
 import select
 import socket
 import time
+import cmd
+try:
+    import readline
+except ImportError:
+    readline = None
+
 
 sys.path.append("sel810asm")
 from sel810dis import *
@@ -19,6 +25,7 @@ class ExternalUnit():
 		self.name = name
 		self.read_buffer = []
 		self.write_buffer = []
+		self.shutdown = False
 		self.socketfn = os.path.join("/tmp","SEL810_" + self.name.replace(" ","_"))
 		try:
 			os.unlink(self.socketfn)
@@ -30,25 +37,35 @@ class ExternalUnit():
 		self.sock.bind(self.socketfn)
 		self.sock.listen(1)
 
-		x = threading.Thread(target=self.socket_handler, args=(0,))
-		x.start()
+		self.thread = threading.Thread(target=self.socket_handler, args=(0,))
+		self.thread.start()
+		print("started external unit %s on %s" % (self.name,self.socketfn))
 		
 	def socket_handler(self,arg):
-		while(1): #fixme
-			connection, client_address = self.sock.accept()
-			pollerObject = select.poll()
-			pollerObject.register(connection, select.POLLIN| select.POLLOUT)
+		serverpollerObject = select.poll()
+		serverpollerObject.register(self.sock, select.POLLIN)
+		
+		while(self.shutdown == False):
+			serverfdVsEvent = serverpollerObject.poll(250)
+			for descriptor, Event in serverfdVsEvent:
+				connection, client_address = descriptor.accept()
+				pollerObject = select.poll()
+				pollerObject.register(connection, select.POLLIN| select.POLLOUT)
 
-			while(1):
-				fdVsEvent = pollerObject.poll(10000)
-				for descriptor, Event in fdVsEvent:
-					if Event & ~select.POLLOUT:
-						if len(self.write_buffer):
-							connection.send(struct.pack("B",self.write_buffer[0]))
-							self.write_buffer = self.write_buffer[1:]
-							
-					if Event & ~select.POLLIN:
-						self.read_buffer.append(connection.recv(1))
+				while(1):#fixme
+					try:
+						fdVsEvent = pollerObject.poll(250)
+						for descriptor, Event in fdVsEvent:
+							if Event & ~select.POLLOUT:
+								if len(self.write_buffer):
+									connection.send(struct.pack("B",self.write_buffer[0]))
+									self.write_buffer = self.write_buffer[1:]
+									
+							if Event & ~select.POLLIN:
+								self.read_buffer.append(connection.recv(1))
+					except:
+						connection.close()
+						break
 
 	def unit_command(self,command):
 		print("%s command %d" % (self.name,command))
@@ -69,14 +86,13 @@ class ExternalUnit():
 		print("%s read" % self.name,t)
 		return t
 
+	def unit_shutdown(self):
+		print("%s external unit shutting down" % self.name)
+		self.shutdown = True
+		self.thread.join()
 
 MAX_MEM_SIZE = 0x7fff
 
-def parity_calc(i):
-	i = i - ((i >> 1) & 0x55555555)
-	i = (i & 0x33333333) + ((i >> 2) & 0x33333333)
-	i = (((i + (i >> 4)) & 0x0F0F0F0F) * 0x01010101) >> 24
-	return int(i % 2)
 
 class RAM():
 	def __init__(self,value=0):
@@ -98,10 +114,15 @@ class RAM():
 	def read(self):
 		return twoscmplment2dec(self.value)
 	
+	def read_raw(self):
+		return self.value
+
 	def write(self,v):
 		self.value = dec2twoscmplment(v)
 		self.parity = parity_calc(self.value)
 		return self.value
+		
+	
 
 SEL810ATYPE = 0
 SEL810BTYPE = 1
@@ -160,7 +181,7 @@ class SEL810CPU():
 		(self.instr_register, mnemonic, indir,  args, comment, second_word, second_word_hint) = SELDISASM(self.ram[self.prog_counter].read())
 		args = args.split(",")
 		
-		print("%06o %s %s" % (self.prog_counter, mnemonic, ",".join(args)))
+		print("%08d %s %s" % (self.prog_counter, mnemonic, ",".join(args)))
 
 		if mnemonic in MREF_OPCODES:
 			idx = False
@@ -177,7 +198,7 @@ class SEL810CPU():
 				address = self.ram[address].read()
 				
 			if mnemonic == "BRU":
-				self.set_program_counter(self.ram[address].read())
+				self.prog_counter = address
 			
 			elif mnemonic == "STA":
 				self.ram_write(address, self.accumulator_a)
@@ -203,7 +224,15 @@ class SEL810CPU():
 				self.accumulator_a =  self.accumulator_a + self.ram[address]["read"]()
 				self.prog_counter = (self.prog_counter + 1) & 0x7fff
 
+			elif mnemonic == "LAA":
+				self.accumulator_a =   self.ram[address]["read"]()
+				self.prog_counter = (self.prog_counter + 1) & 0x7fff
+
+			elif mnemonic == "LBA":
+				self.accumulator_b =  self.ram[address]["read"]()
+				self.prog_counter = (self.prog_counter + 1) & 0x7fff
 				
+					
 		elif mnemonic in IO_OPCODES:
 			(unit,wait) = args #assuming all the number we produce are octal sames time
 			unit = int(unit[1:],8)
@@ -315,23 +344,143 @@ class SEL810CPU():
 		binfile = loadProgramBin(file)
 		for i in range(0,len(binfile)):
 			self.memory_map[address+i]["write"](binfile[i])
+			
+	def shutdown(self):
+		for u in self.external_units:
+#			print(u)
+			u.unit_shutdown()
 
 
+EXIT_FLAG = False
+
+class SEL810Shell(cmd.Cmd):
+	intro = 'Welcome to the SEL emulator/debugger. Type help or ? to list commands.\n'
+	prompt = '(SEL810x) '
+	file = None
+	cpu = SEL810CPU()
+	exit_flag = False
+	histfile = os.path.expanduser('~/.sel810_console_history')
+	histfile_size = 1000
+
+	def do_step(self, arg):
+		'singlestep the processor'
+		self.cpu.panelswitch_single_cycle()
+
+	def do_toggle_run_stop(self, arg):
+		'execute until a halt is recieved'
+		self.cpu.run()
+
+	def do_load(self, arg):
+		'load a binary file into memory at an address load [address] [filename]'
+		try:
+			(addr,file) = arg.split(" ")
+		except ValueError:
+			print("not enough arguments provided")
+			return False
+		addr = int(addr) # fixme, should be flexible
+		self.cpu.loadAtAddress(addr,file)
+
+	def do_setpc(self,arg):
+		'set the program counter to a specific memory location'
+		try:
+			(progcnt,) = arg.split(" ")
+		except ValueError:
+			print("not enough arguments provided")
+			return False
+		
+		progcnt = int(progcnt) # fixme, should be flexible
+		self.cpu.set_program_counter(progcnt)
+
+	def do_quit(self,args):
+		'exit the emulator'
+		self.cpu.shutdown()
+		return True
+		
+	def do_hexdump(self,arg):
+		'hexdump SEL memory, hexdump [offset] [length]'
+		try:
+			(offset,length) = arg.split(" ")
+			offset = int(offset)
+			length = int(length)
+		except ValueError:
+			print("not enough arguments provided")
+			return False
+
+		for i in range(offset,offset+length,8):
+			print("0x%04x\t" % i,end='')
+			for e in range(i,i+8 if (i+8)<=length else i + (length-i)):
+				print("0x%04x "% self.cpu.ram[e].read_raw(),end="")
+			print("")
+
+	def do_octdump(self,arg):
+		'octdump SEL memory, octdump [offset] [length]'
+		try:
+			(offset,length) = arg.split(" ")
+			offset = int(offset)
+			length = int(length)
+		except ValueError:
+			print("not enough arguments provided")
+			return False
+
+		for i in range(offset,offset+length,8):
+			print("0o%06o\t" % i,end='')
+			for e in range(i,i+8 if (i+8)<=length else i + (length-i)):
+				print("0o%06o "% self.cpu.ram[e].read_raw(),end="")
+			print("")
+
+
+	def do_disassemble(self,arg):
+		'disassemble SEL memory, disassemble [offset] [length]'
+		try:
+			(offset,length) = arg.split(" ")
+			offset = int(offset)
+			length = int(length)
+		except ValueError:
+			print("not enough arguments provided")
+			return False
+
+		for i in range(offset,offset+length,8):
+			for e in range(i,i+8 if (i+8)<=length else i + (length-i)):
+				(opcode, mnemonic, indir,  args, comment, second_word, second_word_hint) = SELDISASM(self.cpu.ram[e].read_raw())
+				print("0x%04x\t %s%s\t%s" % (e,mnemonic,indir,args))
+			
+
+	def do_registers(self,args):
+		'show the current register contents'
+		print("program counter: %s" % self.cpu.prog_counter)
+		print("accumulator a: %s" % self.cpu.accumulator_a)
+		print("accumulator b: %s" % self.cpu.accumulator_b)
+		print("\"index\": %s" % self.cpu.get_index())
+		if self.cpu.type == SEL810BTYPE:
+			print("hardware index register: %s" % self.cpu.hw_index_register)
+
+
+
+	def postcmd(self,arg,b):
+		print("ok")
+
+#		if self.cpu.halt_flag:
+#			print("halted")
+		return arg
+
+	def preloop(self):
+		if readline and os.path.exists(self.histfile):
+			readline.read_history_file(self.histfile)
+
+	def postloop(self):
+		if readline:
+			readline.set_history_length(self.histfile_size)
+			readline.write_history_file(self.histfile)
+
+#	def precmd(self, line):
+#		pass
+
+	def close(self):
+		pass
+		
 if __name__ == '__main__':
 	file= sys.argv[1]
-	
-	cpu = SEL810CPU()
-	cpu.loadAtAddress(0o0000,file)
-	cpu.set_program_counter(0o0000)
-	
-	cpu.panelswitch_start_stop_toggle()
-	
-#	while(1):
-	for i in range(20):
-		cpu.panelswitch_single_cycle()
-#	cpu.run()
-	print("halted")
-	
-#	for val in  binfile:
-#		(opcode, nmemonic, indir,  args, comment, second_word, second_word_hint) = SELDISASM(val)
-#		print(nmemonic)
+
+shell = SEL810Shell()
+#while shell.exit_flag == False:
+print(shell.cmdloop())
