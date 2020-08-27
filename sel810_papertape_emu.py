@@ -1,3 +1,4 @@
+import time
 import sys
 import threading
 import select
@@ -12,7 +13,7 @@ from rs227 import *
 
 sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
 
-sock.connect("/tmp/SEL810_paper tape")
+sock.connect("/tmp/SEL810_paper_tape")
 tape = RS227(sys.argv[1])
 tapedata = tape.read_contents()
 for w in tapedata:
@@ -21,4 +22,5 @@ for w in tapedata:
 	time.sleep(byte_time)
 	sock.send(bytes(bb[1]))
 	time.sleep(byte_time)
+
 print("sent %d words" % len(tapedata))

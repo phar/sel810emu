@@ -6,7 +6,7 @@ import time
 
 sys.path.append("sel810asm")
 from sel810dis import *
-
+from util import *
 
 #
 # connect to asr33 console:
@@ -96,27 +96,25 @@ class RAM():
 		return self.prot
 		
 	def read(self):
-		return self.value
+		return twoscmplment2dec(self.value)
 	
 	def write(self,v):
-#		if v < 0:
-#			val = oparg | ((~abs(v) + 1)  & 0xffff)#its a 16 bit value so to fix the sign bit
-#		else:
-#			val = oparg | v
-		
-		self.value = v
+		self.value = dec2twoscmplment(v)
 		self.parity = parity_calc(self.value)
 		return self.value
 
+SEL810ATYPE = 0
+SEL810BTYPE = 1
 
 class SEL810CPU():
-	def __init__(self):
+	def __init__(self,type= SEL810ATYPE):
 		self.ram = [RAM() for x in range(MAX_MEM_SIZE)]
-
+		self.type = SEL810ATYPE
 		self.external_units = [ExternalUnit("nulldev"),ExternalUnit("asr33"),ExternalUnit("paper tape"),ExternalUnit("card punch"),ExternalUnit("card reader"),ExternalUnit("line printer"),ExternalUnit("TCU 1"),ExternalUnit("TCU 2"),ExternalUnit("INVALID 1"),ExternalUnit("INVALID 2"),ExternalUnit("typewriter"),ExternalUnit("X-Y plotter"),ExternalUnit("interval timer"),ExternalUnit("movable head disc"),ExternalUnit("CRT"),ExternalUnit("fixed head disc")]
 		self.memory_map = []
 		self.prog_counter = 0
 		self.instr_register = 0
+		self.hw_index_register = 0
 		self.accumulator_a = 0
 		self.accumulator_b = 0
 		self.t_register = 0
@@ -125,11 +123,20 @@ class SEL810CPU():
 		self.IOwait_flag = False
 		self.interrupt_flag = False
 		self.overflow_flag = False
-#		self.switch_runstop = 0
+		self.control_switches = 0
 
 		for borp in range(0, MAX_MEM_SIZE): #memory is filled entirely with ram right now
 			self.memory_map.append({"read": lambda x=borp:ram[x].read(), "write": lambda x,y=borp : self.ram[y].write(x)})
-			
+
+	def get_index(self):
+		if self.type == SEL810ATYPE:
+			return self.accumulator_b
+		elif self.type == SEL810BTYPE:
+			return self.hw_index_register
+	
+	def set_control_switches(self,val):
+		self.control_switches = val & 0xffff
+		
 	def set_program_counter(self, addr):
 		self.prog_counter = addr & MAX_MEM_SIZE
 		
@@ -152,103 +159,157 @@ class SEL810CPU():
 	def panelswitch_single_cycle(self):
 		(self.instr_register, mnemonic, indir,  args, comment, second_word, second_word_hint) = SELDISASM(self.ram[self.prog_counter].read())
 		args = args.split(",")
-
-		print("%06o %s" % (self.prog_counter, mnemonic))
-		if mnemonic == "CEU":
-			(unit,wait) = args #assuming all the number we produce are octal sames time
-			unit = int(unit[1:],8)
-			self.IOwait_flag = True
-			self.external_units[unit].unit_command(self.ram[self.prog_counter + 1].read())
-			self.IOwait_flag = False
-			self.prog_counter = self.prog_counter + 2 #second word
-			
-		if mnemonic == "TEU":
-			(unit,wait) = args #assuming all the number we produce are octal sames time
-			unit = int(unit[1:],8)
-			self.IOwait_flag = True
-			self.accumulator_a = self.external_units[unit].unit_test(self.ram[self.prog_counter+ 1].read())
-			self.IOwait_flag = False
-			self.prog_counter = self.prog_counter + 2 #second word
-			
-		elif mnemonic == "AIP":
-			(unit,wait) = args #assuming all the number we produce are octal sames time
-			unit = int(unit[1:],8)
-			self.IOwait_flag = True
-			self.accumulator_a = self.external_units[unit].unit_read()
-			self.IOwait_flag = False
-			self.prog_counter = self.prog_counter + 1
-
-		elif mnemonic == "AOP":
-			(unit,wait) = args #assuming all the number we produce are octal sames time
-			unit = int(unit[1:],8)
-			self.IOwait_flag = True
-			self.external_units[unit].unit_write(self.accumulator_a)
-			self.IOwait_flag = False
-			self.prog_counter = self.prog_counter + 1
-
-		elif mnemonic == "BRU":
-			(address,) = args
-			address = int(address[1:],8)
-			self.set_program_counter(address)
-
-		elif mnemonic == "IBS":
-			self.accumulator_b =  (self.accumulator_b + 1) & 0xffff
-			if self.accumulator_b  == 0:
-				self.prog_counter = self.prog_counter + 2
-			else:
-				self.prog_counter = self.prog_counter + 1
-
-		elif mnemonic == "NOP":
-			self.prog_counter = self.prog_counter + 1
-
-		elif mnemonic == "SAP":
-			if self.accumulator_a > 0:
-				self.set_program_counter(self.prog_counter + 1)
-			self.prog_counter = self.prog_counter + 1
-
-		elif mnemonic == "SAN":
-			if self.accumulator_a < 0:
-				self.prog_counter = self.prog_counter + 1
-			self.prog_counter = self.prog_counter + 1
-				
-		elif mnemonic == "SAZ":
-			if self.accumulator_a == 0:
-				self.prog_counter = self.prog_counter + 1
-			self.prog_counter = self.prog_counter + 1
-
-		elif mnemonic == "STA":
-			(address,) = args
-			address = int(address[1:],8)
-			self.ram_write(address, self.accumulator_a)
-			self.prog_counter = self.prog_counter + 1
 		
-		elif mnemonic == "STB":
-			(address,) = args
+		print("%06o %s %s" % (self.prog_counter, mnemonic, ",".join(args)))
+
+		if mnemonic in MREF_OPCODES:
+			idx = False
+			if len(args) == 1:
+				(address,) = args
+			elif len(args) == 2:
+				(address,idx) = args
+
 			address = int(address[1:],8)
-			self.ram_write(address, self.accumulator_b)
-			self.prog_counter = self.prog_counter + 1
 
-		elif mnemonic == "TBA":
-			 self.accumulator_a = self.accumulator_b
-			 self.prog_counter = self.prog_counter + 1
-			 
-		elif mnemonic == "TAB":
-			self.accumulator_b = self.accumulator_a
-			self.prog_counter = self.prog_counter + 1
+#			print("\"%s\"" % indir)
+			if indir == "*":
+				print("-> %d"% self.ram[address].read())
+				address = self.ram[address].read()
+				
+			if mnemonic == "BRU":
+				self.set_program_counter(self.ram[address].read())
+			
+			elif mnemonic == "STA":
+				self.ram_write(address, self.accumulator_a)
+				self.prog_counter = (self.prog_counter + 1) & 0x7fff
+			
+			elif mnemonic == "STB":
+				self.ram_write(address, self.accumulator_b)
+				self.prog_counter = (self.prog_counter + 1) & 0x7fff
 
-		elif mnemonic == "HLT":
-			self.halt_flag = True
+			elif mnemonic == "AMB":
+				self.accumulator_b =  self.accumulator_b + self.ram[address]["read"]()
+				self.prog_counter = (self.prog_counter + 1) & 0x7fff
+
+			elif mnemonic == "SPB":
+				self.ram[address].write((self.prog_counter + 1) & 0x7fff)
+				self.prog_counter = (address + 1) & 0x7fff
+		
+			elif mnemonic == "ABA":
+				self.accumulator_a =  self.accumulator_a & self.accumulator_b
+				self.prog_counter = (self.prog_counter + 1) & 0x7fff
+
+			elif mnemonic == "AMA":
+				self.accumulator_a =  self.accumulator_a + self.ram[address]["read"]()
+				self.prog_counter = (self.prog_counter + 1) & 0x7fff
+
+				
+		elif mnemonic in IO_OPCODES:
+			(unit,wait) = args #assuming all the number we produce are octal sames time
+			unit = int(unit[1:],8)
+		
+			if mnemonic == "CEU":
+				self.IOwait_flag = True
+				self.external_units[unit].unit_command(self.ram[self.prog_counter + 1].read())
+				self.IOwait_flag = False
+				self.prog_counter = (self.prog_counter + 2) & 0x7fff #second word
+				
+			if mnemonic == "TEU":
+				self.IOwait_flag = True
+				self.accumulator_a = self.external_units[unit].unit_test(self.ram[self.prog_counter+ 1].read())
+				self.IOwait_flag = False
+				self.prog_counter = (self.prog_counter + 2) & 0x7fff #second word
+
+			elif mnemonic == "AIP":
+				self.IOwait_flag = True
+				self.accumulator_a = self.external_units[unit].unit_read()
+				self.IOwait_flag = False
+				self.prog_counter = (self.prog_counter + 1) & 0x7fff
+
+			elif mnemonic == "AOP":
+				self.IOwait_flag = True
+				self.external_units[unit].unit_write(self.accumulator_a)
+				self.IOwait_flag = False
+				self.prog_counter = (self.prog_counter + 1) & 0x7fff
+
+			elif mnemonic == "MIP":
+				self.IOwait_flag = True
+				self.accumulator_a = self.external_units[unit].unit_read()
+				self.IOwait_flag = False
+				self.prog_counter = (self.prog_counter + 1) & 0x7fff
+
+			elif mnemonic == "MOP":
+				self.IOwait_flag = True
+				self.external_units[unit].unit_write(self.ram[self.prog_counter + 1].read())
+				self.IOwait_flag = False
+			self.prog_counter = (self.prog_counter + 2) & 0x7fff
+			
+		elif mnemonic in AUGMENTED_OPCODES:
+
+			if mnemonic == "IBS":
+				self.accumulator_b =  (self.accumulator_b + 1) & 0xffff
+				if self.accumulator_b  == 0:
+					self.prog_counter = (self.prog_counter + 2) & 0x7fff
+				else:
+					sself.prog_counter = (self.prog_counter + 1) & 0x7fff
+
+			elif mnemonic == "NOP":
+				self.prog_counter = (self.prog_counter + 1) & 0x7fff
+
+			elif mnemonic == "SAP":
+				if self.accumulator_a > 0:
+					self.prog_counter = (self.prog_counter + 1) & 0x7fff
+				self.prog_counter = (self.prog_counter + 1) & 0x7fff
+
+			elif mnemonic == "SAN":
+				if self.accumulator_a < 0:
+					self.prog_counter = (self.prog_counter + 1) & 0x7fff
+				self.prog_counter = (self.prog_counter + 1) & 0x7fff
+					
+			elif mnemonic == "SAZ":
+				if self.accumulator_a == 0:
+					self.prog_counter = self.prog_counter + 1
+				self.prog_counter = (self.prog_counter + 1) & 0x7fff
+
+			elif mnemonic == "TBA":
+				 self.accumulator_a = self.accumulator_b
+				 self.prog_counter = (self.prog_counter + 1) & 0x7fff
+				 
+			elif mnemonic == "TAB":
+				self.accumulator_b = self.accumulator_a
+				self.prog_counter = (self.prog_counter + 1) & 0x7fff
+
+			elif mnemonic == "IMS":
+				(address,) = args
+				address = int(address[1:],8)
+				t = self.ram[address]["read"]()+1
+				self.ram[address].write(t)
+				if t == 0:
+					self.prog_counter = (self.prog_counter + 1) & 0x7fff
+				self.prog_counter = (self.prog_counter + 1) & 0x7fff
+
+			elif mnemonic == "LCS":
+				self.accumulator_a =  self.control_switches
+				self.prog_counter = (self.prog_counter + 1) & 0x7fff
+
+			elif mnemonic == "TXA":
+				self.accumulator_a =  self.hw_index_register
+				self.prog_counter = (self.prog_counter + 1) & 0x7fff
+				
+			elif mnemonic == "TAX":
+				self.hw_index_register = self.accumulator_a
+				self.prog_counter = (self.prog_counter + 1) & 0x7fff
+
+			elif mnemonic == "HLT":
+				self.halt_flag = True
+
+		elif mnemonic in INT_OPCODES:
+			pass
 
 	def run(self):
 		while(not self.halt_flag):
 			self.panelswitch_single_cycle()
 		return
-#	def ram_read(self,addr):
-#		return self.ram[addr]
-#
-#	def ram_write(self,addr,val):
-#		self.ram[addr & MAX_MEM_SIZE] = val & 0xffff
-#		return self.ram[addr& 0xffff]
 
 	def loadAtAddress(self,address,file):
 		binfile = loadProgramBin(file)
@@ -260,13 +321,15 @@ if __name__ == '__main__':
 	file= sys.argv[1]
 	
 	cpu = SEL810CPU()
-	cpu.loadAtAddress(0o6000,file)
-	cpu.set_program_counter(0o6000)
+	cpu.loadAtAddress(0o0000,file)
+	cpu.set_program_counter(0o0000)
 	
 	cpu.panelswitch_start_stop_toggle()
 	
 #	while(1):
-	cpu.run()
+	for i in range(20):
+		cpu.panelswitch_single_cycle()
+#	cpu.run()
 	print("halted")
 	
 #	for val in  binfile:
