@@ -133,7 +133,7 @@ class ExternalUnit():
 MAX_MEM_SIZE = 0x7fff
 
 
-class RAM():
+class RAM_CELL():
 	def __init__(self,value=0):
 		self.value = 0
 		self.prot = False
@@ -158,6 +158,7 @@ class RAM():
 
 	def write_raw(self,v):
 		self.value = v
+		self.parity = parity_calc(self.value)
 	
 	def write(self,v):
 		self.value = dec2twoscmplment(v)
@@ -171,18 +172,21 @@ SEL810BTYPE = 1
 
 class SEL810CPU():
 	def __init__(self,type= SEL810ATYPE):
-		self.ram = [RAM() for x in range(MAX_MEM_SIZE)]
+		self.ram = [RAM_CELL() for x in range(MAX_MEM_SIZE)]
 		self.type = SEL810ATYPE
 		self.external_units = [ExternalUnit("nulldev"),ExternalUnit("asr33",chardev=True),ExternalUnit("paper tape",chardev=True),ExternalUnit("card punch",chardev=True),ExternalUnit("card reader",chardev=True),ExternalUnit("line printer",chardev=True),ExternalUnit("TCU 1"),ExternalUnit("TCU 2"),ExternalUnit("INVALID 1"),ExternalUnit("INVALID 2"),ExternalUnit("typewriter"),ExternalUnit("X-Y plotter"),ExternalUnit("interval timer"),ExternalUnit("movable head disc"),ExternalUnit("CRT"),ExternalUnit("fixed head disc")]
-		self.memory_map = []
+		
 		self.prog_counter = 0
 		self.instr_register = 0
 		self.hw_index_register = 0
 		self.accumulator_a = 0
 		self.accumulator_b = 0
+		self.protect_register = 0
+		self.vbr = 0
+		
 		self.t_register = 0
+		
 		self.halt_flag = True #start halted
-		self.parity_flag = False
 		self.IOwait_flag = False
 		self.interrupt_flag = False
 		self.overflow_flag = False
@@ -227,7 +231,6 @@ class SEL810CPU():
 		op  = SELOPCODE(opcode=self.ram[self.prog_counter].read())
 		if op.nmemonic in SEL810_OPCODES:
 			if SEL810_OPCODES[op.nmemonic][0] == SEL810_MREF_OPCODE:
-#				index = op.fields["x"]
 				indir = op.fields["i"]
 				map = op.fields["m"]
 				address = op.fields["address"]
@@ -235,11 +238,16 @@ class SEL810CPU():
 				if indir:
 					print("-> %d"% self.ram[address].read_raw())
 					address = self.ram[address].read()
+				
+				if op.nmemonic == "LAA":
+					print("foo",(address + (op.fields["x"] * self.get_index())), self.get_index())
+					self.accumulator_a = self.ram[(address + (op.fields["x"] * self.get_index())) & 0x7fff].read()
+					self._increment_pc()
 
-				if op.nmemonic == "BRU":
-					self.prog_counter = (address + ( op.fields["x"] * self.get_index())) & 0x7fff
-					self.cyclecount += 1
-
+				elif op.nmemonic == "LBA":
+					self.accumulator_b = self.ram[(address + (op.fields["x"] * self.get_index())) & 0x7fff].read()
+					self._increment_pc()
+					
 				elif op.nmemonic == "STA":
 					self.ram[address].write(self.accumulator_a)
 					self._increment_pc()
@@ -247,32 +255,60 @@ class SEL810CPU():
 				elif op.nmemonic == "STB":
 					self.ram_write(address, self.accumulator_b)
 					self._increment_pc()
-
-				elif op.nmemonic == "AMB":
-					self.accumulator_b =  self.accumulator_b + self.ram[address].read()
+					
+				elif op.nmemonic == "AMA":
+					if self.accumulator_a + self.ram[address].read() > 0xffff:
+						self.overflow_flag = True
+					self.accumulator_a =  (self.accumulator_a + self.ram[address].read()) & 0xffff
 					self._increment_pc()
+					self.cyclecount += 2
 
+				elif op.nmemonic == "SMA":
+					if self.accumulator_a - self.ram[address].read() < 0:
+						self.overflow_flag = True
+					self.accumulator_a =  (self.accumulator_a + self.ram[address].read()) & 0xffff
+					self._increment_pc()
+					self.cyclecount += 2
+
+				elif op.nmemonic == "MPY":
+					if self.accumulator_a * self.ram[address].read() < 0:
+							self.overflow_flag = True
+						self.accumulator_a =  (self.accumulator_a * self.ram[address].read()) & 0xffff
+						self._increment_pc()
+						self.cyclecount += 6
+
+				elif op.nmemonic == "DIV": #fixme
+					self._increment_pc()
+								
+				elif op.nmemonic == "BRU":
+					self.prog_counter = (address + ( op.fields["x"] * self.get_index())) & 0x7fff
+					self.cyclecount += 1
+					
 				elif op.nmemonic == "SPB":
 					self.ram[address].write((self.prog_counter + 1) & 0x7fff)
 					self.prog_counter = address
 					self._increment_pc()
 					self.cyclecount +=2
 
-				elif op.nmemonic == "ABA":
-					self.accumulator_a =  self.accumulator_a & self.accumulator_b
+				elif op.nmemonic == "IMS":
+					t = self.ram[address]["read"]()+1
+					self.ram[address].write(t)
+					if t == 0:
+						self._increment_pc()
 					self._increment_pc()
+					self.cyclecount += 3
 
-				elif op.nmemonic == "AMA":
-					self.accumulator_a =  self.accumulator_a + self.ram[address].read()
+				elif op.nmemonic == "CMA":
+					if self.accumulator_a == self.ram[address].read():
+						self._increment_pc() #the next instruction is skipped.
+					elif self.accumulator_a > self.ram[address].read():
+						self._increment_pc() #the next two instructions are skipped.
+						self._increment_pc()
 					self._increment_pc()
+					self.cyclecount += 3
 
-				elif op.nmemonic == "LAA":
-					print("foo",(address + (op.fields["x"] * self.get_index())), self.get_index())
-					self.accumulator_a = self.ram[(address + (op.fields["x"] * self.get_index())) & 0x7fff].read()
-					self._increment_pc()
-
-				elif op.nmemonic == "LBA":
-					self.accumulator_b = self.ram[(address + (op.fields["x"] * self.get_index())) & 0x7fff].read()
+				elif op.nmemonic == "AMB":
+					self.accumulator_b =  self.accumulator_b + self.ram[address].read()
 					self._increment_pc()
 		
 			elif SEL810_OPCODES[op.nmemonic][0] == SEL810_IO_OPCODE:
@@ -286,13 +322,22 @@ class SEL810CPU():
 					self.prog_counter = (self.prog_counter + 2) & 0x7fff #second word
 					self.cyclecount += 4
 
-				if op.nmemonic == "TEU":
+				elif op.nmemonic == "TEU":
 					self.IOwait_flag = True
 					self.accumulator_a = self.external_units[op.fields["unit"]].unit_test(self.ram[self.prog_counter+ 1].read())
 					self.IOwait_flag = False
 					self.prog_counter = (self.prog_counter + 2) & 0x7fff #second word
 					self.cyclecount += 4
 
+
+				elif op.nmemonic == "SNS":
+					if self.control_switches & (1 << op.fields["unit"]):
+						self._increment_pc()
+					else: #if switch is NOT set, the next instruction is skipped.
+						self._increment_pc()
+						self._increment_pc()
+					self.cyclecount += 1
+	
 				elif op.nmemonic == "AIP":
 					self.IOwait_flag = True
 					try:
@@ -323,73 +368,260 @@ class SEL810CPU():
 					print("mop", self.ram[(self.prog_counter + 1) & 0x7fff].read())
 					self.external_units[op.fields["unit"]].unit_write(self.ram[(self.prog_counter + 1) & 0x7fff].read())
 					self.IOwait_flag = False
+					self._increment_pc()
+					self._increment_pc()
 					self.cyclecount += 4
-					self._increment_pc()
-					self._increment_pc()
-
-#				self.prog_counter = (self.prog_counter + 2) & 0x7fff
-				
+			
 			elif SEL810_OPCODES[op.nmemonic][0] == SEL810_AUGMENTED_OPCODE:
 
 				augmentcode = op.fields["augmentcode"]
-	
-				if op.nmemonic == "IBS":
+
+				if op.nmemonic == "HLT":
+					pass
+				elif op.nmemonic == "RNA":
+					if self.accumulator_b & 0x4000:
+						if self.accumulator_a + 1 > 0x7fff:
+							self.overflow_flag = True
+						self.accumulator_a =  (self.accumulator_a + 1) & 0x7fff
+					self._increment_pc()
+					self.cyclecount += 1
+					
+				elif op.nmemonic == "NEG":
+					self._increment_pc()
+					
+				elif op.nmemonic == "CLA":
+					self._increment_pc()
+					
+				elif op.nmemonic == "TBA":
+					 self.accumulator_a = self.accumulator_b
+					 self.cyclecount += 1
+					 self._increment_pc()
+					 
+				elif op.nmemonic == "TAB":
+					self.accumulator_b = self.accumulator_a
+					self.cyclecount += 1
+					self._increment_pc()
+
+				elif op.nmemonic == "IAB":
+					t = self.accumulator_a
+					self.accumulator_a = self.accumulator_b
+					self.accumulator_b = t
+					self._increment_pc()
+					self.cyclecount += 1
+					
+				elif op.nmemonic == "CSB":
+					if self.accumulator_b & 0x8000:
+						self.carry_flag = True
+					else:
+						self.carry_flag = False
+					self.accumulator_b &= 0x7fff
+					self._increment_pc()
+					self.cyclecount += 1
+					
+				elif op.nmemonic == "RSA":
+					self._increment_pc()
+					
+				elif op.nmemonic == "LSA":
+					self._increment_pc()
+					
+				elif op.nmemonic == "FRA":
+					self._increment_pc()
+					
+				elif op.nmemonic == "FLL":
+					t = (((self.accumulator_a << 16) | self.accumulator_b) << op.fields["shifts"]) & 0xffffffff
+					self.accumulator_a = (t & 0xffff0000) >> 16
+					self.accumulator_b = (t & 0x0000ffff)
+					if 0 > op.fields["shifts"] and op.fields["shifts"] < 5:
+						self.cyclecount += 2
+					elif 4 > op.fields["shifts"] and op.fields["shifts"] < 9:
+						self.cyclecount += 3
+					elif 8 > op.fields["shifts"] and op.fields["shifts"] < 13:
+						self.cyclecount += 4
+					elif 13 > op.fields["shifts"] and op.fields["shifts"] < 16:
+						self.cyclecount += 5
+					self._increment_pc()
+					
+				elif op.nmemonic == "FRL":
+					t = (((self.accumulator_a << 16) | self.accumulator_b) << op.fields["shifts"])
+					l = (t ^ 0xffffffff) >> (16-op.fields["shifts"])  #uhhh
+					t = t | l
+					
+					self.accumulator_a = (t & 0xffff0000) >> 16
+					self.accumulator_b = (t & 0x0000ffff)
+					if 0 > op.fields["shifts"] and op.fields["shifts"] < 5:
+						self.cyclecount += 2
+					elif 4 > op.fields["shifts"] and op.fields["shifts"] < 9:
+						self.cyclecount += 3
+					elif 8 > op.fields["shifts"] and op.fields["shifts"] < 13:
+						self.cyclecount += 4
+					elif 13 > op.fields["shifts"] and op.fields["shifts"] < 16:
+						self.cyclecount += 5
+					self._increment_pc()
+					
+				elif op.nmemonic == "RSL":
+					self.accumulator_a = (self.accumulator_a >> op.fields["shifts"]) & 0xffff
+					if 0 > op.fields["shifts"] and op.fields["shifts"] < 5:
+						self.cyclecount += 2
+					elif 4 > op.fields["shifts"] and op.fields["shifts"] < 9:
+						self.cyclecount += 3
+					elif 8 > op.fields["shifts"] and op.fields["shifts"] < 13:
+						self.cyclecount += 4
+					elif 13 > op.fields["shifts"] and op.fields["shifts"] < 16:
+						self.cyclecount += 5
+					self._increment_pc()
+					
+				elif op.nmemonic == "LSL":
+					self.accumulator_a = (self.accumulator_a << op.fields["shifts"]) & 0xffff
+					if 0 > op.fields["shifts"] and op.fields["shifts"] < 5:
+						self.cyclecount += 2
+					elif 4 > op.fields["shifts"] and op.fields["shifts"] < 9:
+						self.cyclecount += 3
+					elif 8 > op.fields["shifts"] and op.fields["shifts"] < 13:
+						self.cyclecount += 4
+					elif 13 > op.fields["shifts"] and op.fields["shifts"] < 16:
+						self.cyclecount += 5
+					self._increment_pc()
+					
+				elif op.nmemonic == "FLA": #fixme
+					t = ((((self.accumulator_a & 0x7fff) << 15) | (self.accumulator_b & 0x7fff)) << op.fields["shifts"]) & 0xffffffff
+					self.accumulator_a = (t & 0xffff0000) >> 16
+					self.accumulator_b = (t & 0x0000ffff)
+					if 0 > op.fields["shifts"] and op.fields["shifts"] < 5:
+						self.cyclecount += 2
+					elif 4 > op.fields["shifts"] and op.fields["shifts"] < 9:
+						self.cyclecount += 3
+					elif 8 > op.fields["shifts"] and op.fields["shifts"] < 13:
+						self.cyclecount += 4
+					elif 13 > op.fields["shifts"] and op.fields["shifts"] < 16:
+						self.cyclecount += 5
+					self._increment_pc()
+					
+				elif op.nmemonic == "ASC":
+					self.accumulator_a ^= 0x8000
+					self._increment_pc()
+					
+				elif op.nmemonic == "SAS":
+					if self.accumulator_a == 0:
+						self._increment_pc()
+					elif self.accumulator_a > 0:
+						self._increment_pc()
+						self._increment_pc()
+					self._increment_pc()
+
+				elif op.nmemonic == "SAZ":
+					if self.accumulator_a == 0:
+						self.prog_counter = self.prog_counter + 1
+					self._increment_pc()
+					
+				elif op.nmemonic == "SAN":
+					if self.accumulator_a < 0:
+						self._increment_pc()
+					self._increment_pc()
+					
+				elif op.nmemonic == "SAP":
+					if self.accumulator_a > 0:
+						self._increment_pc()
+					self._increment_pc()
+
+				elif op.nmemonic == "SOF":
+					if self.overflow_flag == True:#If the arithmetic overflow latch is set, it is reset and the next instruction is executed;
+						self.overflow_flag = False
+					else: #if the latch is reset, the next instruction is skipped.
+						self._increment_pc()
+					self._increment_pc()
+					self.cyclecount += 1
+
+				elif op.nmemonic == "IBS":
 					self.accumulator_b =  (self.accumulator_b + 1) & 0xffff
 					if self.accumulator_b  == 0:
 						self.prog_counter = (self.prog_counter + 2) & 0x7fff
 					else:
 						self._increment_pc()
-	
-				elif op.nmemonic == "NOP":
+						
+				elif op.nmemonic == "ABA":
+					self.accumulator_a =  self.accumulator_a & self.accumulator_b
 					self._increment_pc()
-	
-				elif op.nmemonic == "SAP":
-					if self.accumulator_a > 0:
-						self._increment_pc()
+
+				elif op.nmemonic == "OBA":
+					self.accumulator_a =  (self.accumulator_a & self.accumulator_b) & 0xffff
 					self._increment_pc()
-	
-				elif op.nmemonic == "SAN":
-					if self.accumulator_a < 0:
-						self._increment_pc()
-					self._increment_pc()
-	
-				elif op.nmemonic == "SAZ":
-					if self.accumulator_a == 0:
-						self.prog_counter = self.prog_counter + 1
-					self._increment_pc()
-	
-				elif op.nmemonic == "TBA":
-					 self.accumulator_a = self.accumulator_b
-					 self._increment_pc()
-	
-				elif op.nmemonic == "TAB":
-					self.accumulator_b = self.accumulator_a
-					self._increment_pc()
-	
-				elif op.nmemonic == "IMS":
-					t = self.ram[address]["read"]()+1
-					self.ram[address].write(t)
-					if t == 0:
-						self._increment_pc()
-					self._increment_pc()
-					self.cyclecount += 3
-	
+					
 				elif op.nmemonic == "LCS":
 					self.accumulator_a =  self.control_switches
 					self._increment_pc()
-	
-				elif op.nmemonic == "TXA":
-					self.accumulator_a =  self.hw_index_register
-					self._increment_pc()
-	
-				elif op.nmemonic == "TAX":
-					self.hw_index_register = self.accumulator_a
-					self._increment_pc()
-	
-				elif op.nmemonic == "LSL":
-					self.accumulator_a = (self.accumulator_a << op.fields["shifts"]) & 0xffff #address is shift count
-					self._increment_pc()
 				
+				elif op.nmemonic == "SNO": #If bit Al does not equal bit AO of the A~Accurnulator, the next instruction is skipped
+					if(self.accumulator_a & 0x0001) != ((self.accumulator_a & 0x0002) >> 1):
+						self._increment_pc()
+					self._increment_pc()
+					self.cyclecount += 1
+	
+				elif op.nmemonic == "NOP":
+					self._increment_pc()
+					self.cyclecount += 1
+					
+				elif op.nmemonic == "CNS":
+					self._increment_pc()
+					
+				elif op.nmemonic == "TOI":
+					self._increment_pc()
+					
+				elif op.nmemonic == "LOB":
+					self._increment_pc()
+					
+				elif op.nmemonic == "OVS":
+					self._increment_pc()
+					
+				elif op.nmemonic == "STX":
+					self.cyclecount += 1
+					self._increment_pc()
+										
+				elif op.nmemonic == "TPB":
+					self.accumulator_b = self.protect_register
+					self._increment_pc()
+					self.cyclecount += 1
+						
+				elif op.nmemonic == "TBP":
+					self.protect_register = self.accumulator_b
+					self._increment_pc()
+					self.cyclecount += 1
+
+				elif op.nmemonic == "TBV":
+					self.vbr =  self.accumulator_b
+					self._increment_pc()
+					self.cyclecount += 1
+					
+				elif op.nmemonic == "TVB":
+					self.accumulator_b = self.vbr
+					self._increment_pc()
+					self.cyclecount += 1
+
+				elif op.nmemonic == "LIX":
+					self.cyclecount += 2
+					self._increment_pc()
+					
+				elif op.nmemonic == "XPX":
+					self._increment_pc()
+				elif op.nmemonic == "XPB":
+					self._increment_pc()
+					
+				elif op.nmemonic == "STB":
+					self.ram[address].write(self.accumulator_b)
+					self._increment_pc()
+					self.cyclecount += 2
+
+				elif op.nmemonic == "ISX":
+					self._increment_pc()
+					
+				elif op.nmemonic == "TAZ":
+					self._increment_pc()
+					
+				elif op.nmemonic == "TXA":
+					self.accumulator_a = self.hw_index_register
+					self._increment_pc()
+	
+
+	
 			elif SEL810_OPCODES[op.nmemonic][0] == SEL810_INT_OPCODES:
 				print(args)
 
