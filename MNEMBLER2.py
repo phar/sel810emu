@@ -3,6 +3,12 @@ import re
 import pickle
 import struct
 	
+	
+SEL810NONETYPE	= 0
+SEL810ATYPE 	= 1
+SEL810BTYPE 	= 2
+
+
 
 SEL810_PEEK_OPCODE 			= 0
 SEL810_MREF_OPCODE 			= 1
@@ -84,7 +90,7 @@ SEL810_OPCODES = {	"LAA":(SEL810_MREF_OPCODE,		OBJOP_MEMREF_LOAD,	0o01,	0,		Fals
 					"CNS":(SEL810_AUGMENTED_OPCODE,	OBJOP_DIRECT_LOAD,	0,		0o34,	False),
 					
 					"TOI":(SEL810_AUGMENTED_OPCODE,	OBJOP_DIRECT_LOAD,	0,		0o35,	False),
-					"LOB":(SEL810_AUGMENTED_OPCODE,	OBJOP_DIRECT_LOAD,	0,		0o36,	False),
+					"LOB":(SEL810_AUGMENTED_OPCODE,	OBJOP_DIRECT_LOAD,	0,		0o36,	True),
 					"OVS":(SEL810_AUGMENTED_OPCODE,	OBJOP_DIRECT_LOAD,	0,		0o37,	False),
 					"STX":(SEL810_AUGMENTED_OPCODE,	OBJOP_DIRECT_LOAD,	0,		0o44,	True),
 					"TBP":(SEL810_AUGMENTED_OPCODE,	OBJOP_DIRECT_LOAD,	0,		0o40,	False),
@@ -96,7 +102,7 @@ SEL810_OPCODES = {	"LAA":(SEL810_MREF_OPCODE,		OBJOP_MEMREF_LOAD,	0o01,	0,		Fals
 					"XPB":(SEL810_AUGMENTED_OPCODE,	OBJOP_DIRECT_LOAD,	0,		0o47,	False),
 					"STB":(SEL810_AUGMENTED_OPCODE,	OBJOP_DIRECT_LOAD,	0,		0o50,	False),
 					"ISX":(SEL810_AUGMENTED_OPCODE,	OBJOP_DIRECT_LOAD,	0,		0o51,	False),
-					"TAZ":(SEL810_AUGMENTED_OPCODE,	OBJOP_DIRECT_LOAD,	0,		0o52,	False),
+					"TAX":(SEL810_AUGMENTED_OPCODE,	OBJOP_DIRECT_LOAD,	0,		0o52,	False),
 					
 					"TXA":(SEL810_AUGMENTED_OPCODE,	OBJOP_DIRECT_LOAD,	0,		0o53,	False),
 					"CEU":(SEL810_IO_OPCODE,		OBJOP_DIRECT_LOAD,	0o13,	0o00,	True),
@@ -1055,20 +1061,25 @@ class SEL810_ASSEMBLER():
 		f = open(fn,"wb")
 		pickle.dump(self.symbols,f)
 		f.close()
-		
+
+
+
+
+
 # TODO
 # does not do sane things with literals in absolute mode
 # EAC/DAC in object mode, not sure its correct
 # BES
 
-asm = SEL810_ASSEMBLER("sel810asm/asm/HELLO_WORLD.ASM")#("sel810asm/asm/CLT4_V1.ASM")#("sel810asm/asm/boot.asm")
-asm.build_symbols()
-print(asm.macros)
-asm.build_constants()
-asm.build_executable()
-print(asm.symbols)
-asm.write_symbols()
+if __name__ == '__main__':
+	asm = SEL810_ASSEMBLER("sel810asm/asm/HELLO_WORLD.ASM")#("sel810asm/asm/CLT4_V1.ASM")#("sel810asm/asm/boot.asm")
+	asm.build_symbols()
+	print(asm.macros)
+	asm.build_constants()
+	asm.build_executable()
+	print(asm.symbols)
+	asm.write_symbols()
 
-#op = SELOPCODE(opcode=0)
-#print(op.pack_asm())
+	#op = SELOPCODE(opcode=0)
+	#print(op.pack_asm())
 
