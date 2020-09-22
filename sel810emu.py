@@ -1061,7 +1061,7 @@ class SEL810Shell(cmd.Cmd):
 			return False
 		
 		progcnt = parse_inputint(progcnt) # fixme, should be flexible
-		self.cpu.cpcmdqueue.put(("u",{"Program Counter":33}))
+		self.cpu.cpcmdqueue.put(("u",{"Program Counter":progcnt}))
 
 	def do_quit(self,args):
 		'exit the emulator'
@@ -1166,7 +1166,7 @@ if __name__ == '__main__':
 	shell = SEL810Shell()
 	
 	telnet = ASR33OnTelnetDriver(shell.cpu, "/tmp/SEL810_asr33","0.0.0.0",9999)
-	cp  = ControlPanelDriver(shell.cpu,"/tmp/control_panel")
+	cp  = ControlPanelDriver(shell.cpu,"/tmp/SEL810_control_panel")
 	cp.start()
 	telnet.start()
 	shell.cmdloop()

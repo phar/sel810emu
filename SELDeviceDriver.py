@@ -82,13 +82,11 @@ class ExternalUnitHandler():
 		return True
 		
 	def handle_configure(self, val):
-		print("ceu command!")
 		self.ceu = val
 		self.update_ceu(self.ceu)
 		self.wq.put(("c",self.ceu))
 
 	def handle_test(self, val):
-		print("teu command!")
 		ret = True
 		if self.update_teu(val) == True:
 			self.wq.put(("t",True))
@@ -98,7 +96,6 @@ class ExternalUnitHandler():
 	
 #----- these are from the emulators perspective
 	def handle_write(self, val):
-		print("mooo",val)
 		self.rq.put(val)
 		self.wq.put(("w", True))
 

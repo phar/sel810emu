@@ -42,15 +42,16 @@ class ASR33OnTelnetDriver():
 		spollerrObject = select.poll()
 		conn = None
 		while(self.cpu._shutdown == False):
-			spollerrObject.register(s, select.POLLIN | select.POLLERR | select.POLLHUP)
+			spollerrObject.register(s, select.POLLIN)
 			sfdVsEvent = spollerrObject.poll(250)
 			if len(sfdVsEvent):
 				sdescriptor, sEvent = sfdVsEvent[0]
 				if sEvent & select.POLLIN:
 					conn, addr = s.accept()
+					connected=True
 					pollerrObject = select.poll()
 					e.event("on")
-					while(e.connected and self.cpu._shutdown == False):
+					while(e.connected and self.cpu._shutdown == False and connected==True):
 						pollerrObject.register(conn, select.POLLIN | select.POLLERR | select.POLLHUP)
 						fdVsEvent = pollerrObject.poll(10)
 						if e.pollread():
@@ -62,11 +63,13 @@ class ASR33OnTelnetDriver():
 								print("socket closed")
 								e.event("off")
 								conn.close()
+								connected=False
 								break
 								
 							if Event & select.POLLIN:
 								e.event("in")
 								e.write(ord(conn.recv(1)) | 0x80)
+								
 		s.close()
 		if conn is not None:
 			conn.close()

@@ -60,9 +60,9 @@ class ControlPanelClient():
 
 if __name__ == '__main__':
 
-	a = ControlPanelClient("/tmp/control_panel",showuypdate)
+	a = ControlPanelClient("/tmp/SEL810_control_panel",showuypdate)
 	a.start()
 
 	while(1):
 		time.sleep(1)
-		a.step()
+#		a.step()
