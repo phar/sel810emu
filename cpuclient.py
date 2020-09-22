@@ -7,9 +7,6 @@ import struct
 import json
 
 
-def showuypdate(arg):
-	print(arg)
-
 class ControlPanelClient():
 	def __init__(self,devicenode,updatecb):
 		self.shutdown = False
@@ -59,6 +56,10 @@ class ControlPanelClient():
 		
 
 if __name__ == '__main__':
+
+
+	def showuypdate(arg):
+		print(arg)
 
 	a = ControlPanelClient("/tmp/SEL810_control_panel",showuypdate)
 	a.start()

@@ -58,7 +58,7 @@ class ControlPanelDriver():
 						fdVsEvent = pollerrObject.poll(250) #this is basically our refresh rate
 						for descriptor, Event in fdVsEvent:
 							if Event & (select.POLLERR | select.POLLHUP):
-								print("socket closed")
+#								print("socket closed")
 								conn.close()
 								break
 								

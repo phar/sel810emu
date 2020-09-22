@@ -60,7 +60,7 @@ class ASR33OnTelnetDriver():
 							
 						for descriptor, Event in fdVsEvent:
 							if Event & (select.POLLERR | select.POLLHUP):
-								print("socket closed")
+#								print("socket closed")
 								e.event("off")
 								conn.close()
 								connected=False
