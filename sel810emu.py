@@ -7,7 +7,21 @@ import cmd
 import os
 import json
 from SELDeviceDriver import *
-
+from ASR33OnTelnet import *
+from cpserver import *
+#
+#TODO
+#  interrupts
+#  variable base register
+#  BTC block transfer controller
+#
+#Maximum Number of BTC's per Computer  8
+#Maximum Number of CGP's per Computer   6
+#Maximum Number of Peripheral Devices per BTC  16
+#RAM should save out to a non-volatile file since the core memory is
+#join threads on exit
+#
+#
 
 
 try:
@@ -26,6 +40,21 @@ CPU_HERTZ = 572000
 
 
 
+class SELBTCDriver():
+	def __init__(self, cpu, baseaddr):
+		self.current_word_address;
+		self.word_count
+		self.baseaddr = baseaddr
+		self.cpu = cpu
+
+	def update_from_memory(self):
+		self.current_word_address = self.cpu.ram[self.baseaddr].read()
+		self.word_count = self.cell0[self.baseaddr+1].read()
+
+	def transfer(self):
+		pass
+		
+
 class ExternalUnitNotConnected(Exception):
 	"""Raised when the external unit is not connected and wait flag is not asserted"""
 	pass
@@ -40,7 +69,7 @@ class ExternalUnit():
 		self.connected = False
 		self.connected_host = None
 		self.connected_port = None
-		self.shutdown = False
+		self._shutdown = False
 		self.chardev = chardev
 		self.socketfn = os.path.join("/tmp","SEL810_" + self.name.replace(" ","_"))
 		self.wq = queue.Queue()
@@ -70,47 +99,54 @@ class ExternalUnit():
 		print("started external unit %s on %s" % (self.name,self.socketfn))
 		
 	def socket_handler(self,arg):
-		while(self.shutdown == False):
-				self.devsock, client_address = self.sock.accept()
-				self.connected = True
-				pollerrObject = select.poll()
-				pollerrObject.register(self.devsock, select.POLLIN | select.POLLERR | select.POLLHUP)
+		servpoller = select.poll()
+		servpoller.register(self.sock, select.POLLIN )
+		while(self.cpu._shutdown == False and self._shutdown == False):
+				sfdVsEvent = servpoller.poll(1)
+				if len(sfdVsEvent):
+					descriptor, sEvent = sfdVsEvent[0]
+					if sEvent & select.POLLIN:
+						self.devsock, client_address = self.sock.accept()
+						self.connected = True
+						pollerrObject = select.poll()
+						pollerrObject.register(self.devsock, select.POLLIN | select.POLLERR | select.POLLHUP)
+						while(self.connected == True and self._shutdown == False and self._shutdown == False):
+								fdVsEvent = pollerrObject.poll(1)
+								for descriptor, Event in fdVsEvent:
+									if Event & (select.POLLERR | select.POLLHUP):
+											self.connected = False
+											self.devsock.close()
+											break
+										
+									if Event & select.POLLIN:
+										try:
+											(t,v) = self.recv_packet()
+										except:
+											self.connected = False
+											self.devsock.close()
+										if t == 'c':
+											self.ceu = v
+											self.ceuresp.set()
+										elif t == 't':
+											self.teu = v
+											self.teuresp.set()
+										elif t == 'w':
+											self.w = v
+											self.wresp.set()
+										elif t == 'r':
+											self.rresp.set()
+										elif t == '?':
+											self.rdyresp.set()
+										elif t == 'i': #interrupt
+											pass
 
-				while(self.connected == True):
-						fdVsEvent = pollerrObject.poll(1)
-						for descriptor, Event in fdVsEvent:
-							if Event & (select.POLLERR | select.POLLHUP):
-									self.connected = False
-									self.devsock.close()
-									break
-								
-							if Event & select.POLLIN:
-								try:
-									(t,v) = self.recv_packet()
-								except:
-									self.connected = False
-									self.devsock.close()
-								if t == 'c':
-									self.ceu = v
-									self.ceuresp.set()
-								elif t == 't':
-									self.teu = v
-									self.teuresp.set()
-								elif t == 'w':
-									self.w = v
-									self.wresp.set()
-								elif t == 'r':
-									self.rresp.set()
-								elif t == '?':
-									self.rdyresp.set()
-									
-						if self.wq.qsize():
-							try:
-								(t,v) = self.wq.get()
-								self.send_packet((t,v))
-							except:
-								self.connected = False
-								self.devsock.close()
+								if self.wq.qsize():
+									try:
+										(t,v) = self.wq.get()
+										self.send_packet((t,v))
+									except:
+										self.connected = False
+										self.devsock.close()
 
 		self.connected = False
 
@@ -162,13 +198,12 @@ class ExternalUnit():
 		self.cpu.IOwait_flag = True
 		self.wq.put(("r",True))
 		self.rresp.wait()
-#		print("%s read" % self.name,self.w)
 		self.cpu.IOwait_flag = False
 		return self.w
 				
 	def _teardown(self):
 		print("%s external unit shutting down" % self.name)
-		self.shutdown = True
+		self._shutdown = True
 		self.thread.join()
 
 
@@ -256,6 +291,9 @@ class SEL810CPU():
 	def __init__(self,type= SEL810ATYPE):
 		self.ram = MEMORY(self)
 		self.type = SEL810ATYPE
+		self.cpcmdqueue = queue.Queue()
+		self._shutdown = False
+
 		self.external_units = {0:ExternalUnit(self,"nulldev"),
 							   1:ExternalUnit(self,"asr33",chardev=True),
 							   2:ExternalUnit(self,"paper tape",chardev=True),
@@ -290,6 +328,7 @@ class SEL810CPU():
 			b_reg_cell = RAM_CELL()
 			self.registers = {
 				"Program Counter":RAM_CELL(width=15),
+				"Instruction":RAM_CELL(),
 				"Index Register":b_reg_cell,
 				"A Register":RAM_CELL(),
 				"B Register":b_reg_cell,
@@ -310,54 +349,37 @@ class SEL810CPU():
 			}
 		self.cyclecount = 0
 
-		#registers
-#		self.prog_counter = 0
-#		self.hw_index_register = 0
-#		self.accumulator_a = 0
-#		self.accumulator_b = 0
-#		self.protect_register = 0
-#		self.vbr = 0 #6 bit
-#		self.control_switches = 0
-
 		self.t_register = 0
+	
+		self.latch = {	"halt":True,#start halted
+						"iowait":False,
+						"overflow":False,
+						"index_pointer":False}
 		
-		#latches
-		self.halt_flag = True #start halted
-		self.IOwait_flag = False
-		self.interrupt_flag = False
-		self.overflow_flag = False
-		self.index_register_pointer = False
+		self.load_core_memory()
+		
+		
+		self.cpthread = threading.Thread(target=control_panel_backend, args=(self,))
+		self.cpthread.start()
 
-	def set_control_switches(self,val):
-		self.control_switches = val & 0xffff
 		
-	def set_program_counter(self, addr):
-#		self.prog_counter = addr & MAX_MEM_SIZE
-		self.registers["Program Counter"].write_raw(addr)
-		
-	def panelswitch_halt(self):
-		pass
-		
-	def panelswitch_clear_t(self):
-		pass
+	def store_core_memory(self):
+		coredata = []
+		for i in range(MAX_MEM_SIZE):
+			coredata.append(self.ram[i].read_raw())
+		storeProgramBin("sel810.coremem",coredata)
 
-	def panelswitch_master_clear(self):
-		pass
+	def load_core_memory(self):
+		try:
+			self.loadAtAddress(0,"sel810.coremem")
+		except: #if we cant load the file, no worries
+			pass
 
-	def panelswitch_start_stop_toggle(self):
-		if self.halt_flag == False:
-			self.halt_flag = True
-			
-		elif self.halt_flag == True:
-			self.halt_flag = False
-			
 	def _increment_pc(self,incrnum=1):
-#		self.prog_counter = (self.prog_counter + incrnum ) & MAX_MEM_SIZE
 		self.registers["Program Counter"].write_raw(self.registers["Program Counter"].read_raw() + incrnum )
 
 	def _next_pc(self):
 		return (self.registers["Program Counter"].read_raw() + 1) & MAX_MEM_SIZE
-
 
 	def _increment_cycle_count(self,incrnum=1):
 		self.cyclecount += incrnum
@@ -382,9 +404,33 @@ class SEL810CPU():
 			val =  self.ram[(base + (x * self.registers["Index Register"].read())) & MAX_MEM_SIZE].read()
 			
 		return val
+	
+	def fire_pf_restore_interrupt(self):
+		self._SPB_indir_opcode(0o1000, True)
 		
-	def panelswitch_single_cycle(self):
-		op  = SELOPCODE(opcode=self.ram[self.registers["Program Counter"].read_raw()].read())
+	def fire_stall_interrupt(self):
+		self._SPB_indir_opcode(0o1001, True)
+
+	def fire_priority_interrupt(self,group,channel):
+		self._SPB_indir_opcode(0o1002 + (group * 12) + channel, True)
+		
+	def _SPB_indir_opcode(self,address): #fixme
+		#fixme
+		address = self.ram[address].read()
+
+		self.ram[address].write(self._next_pc())
+		self.registers["Program Counter"].write_raw(address)
+		self._increment_cycle_count(2)
+		self._increment_pc()
+
+
+	def panelswitch_step_neg_edge(self):
+		self.registers["Instruction"].write_raw(self.ram[self.registers["Program Counter"].read_raw()].read_raw())
+
+
+
+	def panelswitch_step_pos_edge(self):
+		op  = SELOPCODE(opcode=self.registers["Instruction"].read_raw())
 		if op.nmemonic in SEL810_OPCODES:
 		
 			if "address" in op.fields:
@@ -415,33 +461,33 @@ class SEL810CPU():
 
 			elif op.nmemonic == "AMA": ##CARRY
 				if (self.registers["A Register"].read() + self.ram[address].read()) > 0xffff:
-					self.overflow_flag = True
+					self.latch["overflow"] = True
 				self.registers["A Register"].write (self.registers["A Register"].read() + self.ram[address].read())
 				self._increment_cycle_count(2)
 				self._increment_pc()
 
 			elif op.nmemonic == "SMA": #CARRY
 				if (self.registers["A Register"].read() - self.ram[address].read()) < 0:
-					self.overflow_flag = True
+					self.latch["overflow"] = True
 				self.registers["A Register"].write(self.registers["A Register"].read() - self.ram[address].read())
 				self._increment_cycle_count(2)
 				self._increment_pc()
 
 			elif op.nmemonic == "MPY":
 				if self.registers["A Register"].read() * self.ram[address].read() < 0:
-						self.overflow_flag = True
+					self.latch["overflow"] = True
 				self.registers["A Register"].write(self.registers["A Register"].read() * self.ram[address].read())
 				self._increment_cycle_count(6)
 				self._increment_pc()
 
 			elif op.nmemonic == "DIV":
-				if  self.ram[address].read() != 0: #fixme
+				if  self.ram[address].read() != 0: #fixme overflow is wrong
 					a = (self.registers["A Register"].read() << 16 | self.registers["B Register"].read()) / self.ram[address].read()
 					b = (self.registers["A Register"].read() << 16 | self.registers["B Register"].read()) % self.ram[address].read()
 					self.registers["A Register"].write(a)
 					self.registers["B Register"].write(b)
 				else:
-					self.overflow_flag = True
+					self.latch["overflow"] = True
 				self._increment_cycle_count(11)
 				self._increment_pc()
 							
@@ -473,7 +519,7 @@ class SEL810CPU():
 
 			elif op.nmemonic == "AMB":
 				if  (self.registers["B Register"].read() + self.ram[address].read()) > 0x7fff:
-					self.overflow_flag = True
+					self.latch["overflow"] = True
 				self.registers["B Register"].write(self.registers["B Register"].read() + self.ram[address].read())
 				self._increment_cycle_count(2)
 				self._increment_pc()
@@ -524,7 +570,7 @@ class SEL810CPU():
 				self._increment_pc()
 
 			elif op.nmemonic == "SNS":
-				if self.control_switches & (1 << op.fields["unit"]):
+				if self.registers["Control Switches"].read() & (1 << op.fields["unit"]):
 					self._increment_pc()
 				else: #if switch is NOT set, the next instruction is skipped.
 					self._increment_pc(2)
@@ -600,13 +646,13 @@ class SEL810CPU():
 				self._increment_pc(2)
 
 			elif op.nmemonic == "HLT":
-				self.halt_flag = True
+				self.latch["halt"] = True
 				self._increment_cycle_count()
 
 			elif op.nmemonic == "RNA":
 				if self.registers["B Register"].read_raw() & 0x4000:
 					if (self.registers["A Register"].raw_read() + 1) > 0x7fff:
-						self.overflow_flag = True
+						self.latch["overflow"] = True
 					self.registers["A Register"].write(self.registers["A Register"].read() + 1)
 				self._increment_cycle_count(1)
 				self._increment_pc()
@@ -739,8 +785,8 @@ class SEL810CPU():
 				self._increment_pc()
 
 			elif op.nmemonic == "SOF":
-				if self.overflow_flag == True:#If the arithmetic overflow latch is set, it is reset and the next instruction is executed;
-					self.overflow_flag = False
+				if self.latch["overflow"] == True:#If the arithmetic overflow latch is set, it is reset and the next instruction is executed;
+					self.latch["overflow"] = False
 				else: #if the latch is reset, the next instruction is skipped.
 					self._increment_pc()
 				self._increment_cycle_count(2)
@@ -793,7 +839,7 @@ class SEL810CPU():
 				self._increment_pc(2)
 				
 			elif op.nmemonic == "OVS":
-				self.overflow_flag = True
+				self.latch["overflow"] = True
 				self._increment_cycle_count(1)
 				self._increment_pc()
 
@@ -830,18 +876,18 @@ class SEL810CPU():
 				self._increment_cycle_count(1)
 				self._increment_pc()
 
-			elif op.nmemonic == "LIX":
+			elif op.nmemonic == "LIX": #fixme
 				self._increment_cycle_count(2)
 				self._increment_cycle_count(1)
 				self._increment_pc()
 
 			elif op.nmemonic == "XPX":
-				self.index_register_pointer = True
+				self.latch["index_pointer"] = True
 				self._increment_cycle_count(1)
 				self._increment_pc()
 
 			elif op.nmemonic == "XPB":
-				self.index_register_pointer = False
+				self.latch["index_pointer"] = False
 				self._increment_cycle_count(1)
 				self._increment_pc()
 
@@ -872,14 +918,28 @@ class SEL810CPU():
 				
 			elif op.nmemonic == "PIE":
 				self._increment_pc()
-
 		else:
 			pass
-		
-	def run(self):
-		while(not self.halt_flag):
-			self.panelswitch_single_cycle()
-		return
+			
+			
+	def get_cpu_state(self):
+		state_struct = {}
+		for n,v in self.registers.items():
+			state_struct[n] = v.read_raw()
+		for n,v in self.latch.items():
+			state_struct[n] = v
+		state_struct["cyclecount"] = self.cyclecount
+		return state_struct
+
+
+	def set_cpu_state(self,state_struct):
+		for n,v in self.registers.items():
+			if n in state_struct:
+				self.registers[n].write_raw(state_struct[n])
+				
+		for n,v in self.latch.items():
+			if n in state_struct:
+				self.latch[n].write_raw (state_struct[n])
 
 	def loadAtAddress(self,address,file):
 		binfile = loadProgramBin(file)
@@ -887,8 +947,11 @@ class SEL810CPU():
 			self.ram[address+i].write_raw(binfile[i])
 			
 	def shutdown(self):
+		self._shutdown = True
+		self.cpthread.join()
 		for n,u in self.external_units.items():
 			u._teardown()
+		self.store_core_memory()
 
 
 
@@ -918,18 +981,61 @@ def parse_inputint(val):
 
 EXIT_FLAG = False
 
+def control_panel_backend(cpu):
+	while cpu._shutdown == False:
+		if cpu.cpcmdqueue.qsize():
+			(c, data) = cpu.cpcmdqueue.get()
+			if c == "s":
+				for i in range(data):
+					cpu.panelswitch_step_neg_edge()
+					cpu.panelswitch_step_pos_edge()
+					print("(next op:%s)" % SELOPCODE(opcode=cpu.ram[cpu.registers["Program Counter"].read_raw()].read()).pack_asm()[0] ) #probably not the way to do this anymore
+
+			elif c == "u":
+				cpu.set_cpu_state(data)
+				
+			elif c == "l":
+				(addr,file) = data
+				cpu.loadAtAddress(addr,file)
+				
+			elif c == "h+":
+				cpu.latch["halt"] = True
+
+			elif c == "h-":
+				cpu.latch["halt"] = False
+
+			elif c == "q":
+				running = False
+				
+		if not cpu.latch["halt"]:
+			cpu.panelswitch_step_neg_edge()
+			cpu.panelswitch_step_pos_edge()
+			
+		else:
+			time.sleep(.1)
+		
+
 class SEL810Shell(cmd.Cmd):
 	intro = 'Welcome to the SEL emulator/debugger. Type help or ? to list commands.\n'
 	prompt = '(SEL810x) '
 	file = None
 	cpu = SEL810CPU()
+	
 	exit_flag = False
 	histfile = os.path.expanduser('~/.sel810_console_history')
 	histfile_size = 1000
 
 	def do_step(self, arg):
 		'singlestep the processor'
-		self.cpu.panelswitch_single_cycle()
+		if len(arg.split(" ")) > 1:
+			steps = parse_inputint(arg.split(" ")[0])
+		else:
+			if arg != "":
+				steps = parse_inputint(arg)
+			else:
+				steps = 1
+		
+		self.cpu.cpcmdqueue.put(("s",steps))
 
 	def do_toggle_run_stop(self, arg):
 		'execute until a halt is recieved'
@@ -943,7 +1049,8 @@ class SEL810Shell(cmd.Cmd):
 			print("not enough arguments provided")
 			return False
 		addr = parse_inputint(addr) # fixme, should be flexible
-		self.cpu.loadAtAddress(addr,file)
+		self.cpu.cpcmdqueue.put(("l",(addr,file)))
+
 
 	def do_setpc(self,arg):
 		'set the program counter to a specific memory location'
@@ -954,11 +1061,12 @@ class SEL810Shell(cmd.Cmd):
 			return False
 		
 		progcnt = parse_inputint(progcnt) # fixme, should be flexible
-		self.cpu.set_program_counter(progcnt)
+		self.cpu.cpcmdqueue.put(("u",{"Program Counter":33}))
 
 	def do_quit(self,args):
 		'exit the emulator'
 		self.exit_flag = True
+		self.cpu.cpcmdqueue.put(("q",None))
 		self.cpu.shutdown()
 		return True
 		
@@ -994,7 +1102,11 @@ class SEL810Shell(cmd.Cmd):
 				print("0o%06o "% self.cpu.ram[i+e].read_raw(),end="")
 			print("")
 
-
+	def do_halt(self,arg):
+		'halt running cpu'
+		self.cpu.cpcmdqueue.put(("h+",None))
+		
+		
 	def do_disassemble(self,arg):
 		'disassemble SEL memory, disassemble [offset] [length]'
 		try:
@@ -1023,13 +1135,7 @@ class SEL810Shell(cmd.Cmd):
 		print("\"I\\O HOLD\":\t\t%s" % str(bool(self.cpu.IOwait_flag)))
 		print("cyclecount:\t\t%dcycles or %fseconds" % (self.cpu.cyclecount, self.cpu.cyclecount * (1.0/CPU_HERTZ)))
 
-
-
 	def postcmd(self,arg,b):
-		print("ok (next op:%s)" % SELOPCODE(opcode=self.cpu.ram[self.cpu.registers["Program Counter"].read_raw()].read()).pack_asm()[0] )
-
-#		if self.cpu.halt_flag:
-#			print("halted")
 		return arg
 
 	def preloop(self):
@@ -1049,92 +1155,21 @@ class SEL810Shell(cmd.Cmd):
 		
 		
 		
-		
-class ASR33ExternalUnit(ExternalUnitHandler):
-	power = True
-	
-	def handle_configure(self, val):
-		print("ceu command!")
-		if val & 0x0080: #power off
-			self.power = False
-			
-		if val & 0x0100: #power on
-			self.power = True
-			
-		if val & 0x0200: #clear
-			pass
-			
-		if val & 0x0400: #key mode
-			pass
-			
-		if val & 0x0800: #reader mode
-			pass
-			
-		if val & 0x1000: #out
-			pass
-			
-		if val & 0x2000: #in
-			pass
-			
-		if val & 0x4000: #interrupt_connect
-			pass
-			
-		self.wq.put(("c",ret))
-
-	def handle_test(self, val):
-		print("teu command!")
-		ret = 0x22
-		self.wq.put(("t",ret))
 
 
-	def handle_ready(self, val):
-		if self.power == False:
-			if val == "r":
-				self.wq.put(("?",self.rq.qsize() > 0))
-			elif val in  ["w","c","t"]:
-				if self.connected:
-					self.wq.put(("?",True))
-				else:
-					self.wq.put(("?",False))
-		else:
-			self.wq.put(("?",False))
-			
-
-def serve_console(shell, socketname,host="0.0.0.0",port=9999):
-	e = ASR33ExternalUnit(socketname,chardev=True)
-	s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-	s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-	s.bind((host, port))
-	s.listen()
-	print("started ASR33 7-bit telnet driver on %s:%d" % (host,port))
-	while(1):
-		conn, addr = s.accept()
-		pollerrObject = select.poll()
-		while(e.connected):
-			pollerrObject.register(conn, select.POLLIN | select.POLLERR | select.POLLHUP)
-			fdVsEvent = pollerrObject.poll(10)
-			if e.pollread():
-				conn.send(struct.pack("B",(e.read() ^ 0x80)))
-				
-			for descriptor, Event in fdVsEvent:
-				if Event & (select.POLLERR | select.POLLHUP):
-					print("socket closed")
-					e.connected = False
-					break
-					
-				if Event & select.POLLIN:
-					e.write(ord(conn.recv(1)) | 0x80)
 
 
 		
 if __name__ == '__main__':
-#	file= sys.argv[1]
+
 
 	shell = SEL810Shell()
-#while shell.exit_flag == False:
-#	print("starting console on port 9999")
-#	os.system("python ASR33OnTelnet.py&")
-	thread = threading.Thread(target=serve_console, args=(shell, "/tmp/SEL810_asr33","0.0.0.0",9999))
-	thread.start()
+	
+	telnet = ASR33OnTelnetDriver(shell.cpu, "/tmp/SEL810_asr33","0.0.0.0",9999)
+	cp  = ControlPanelDriver(shell.cpu,"/tmp/control_panel")
+	cp.start()
+	telnet.start()
+	shell.cmdloop()
 
-	print(shell.cmdloop())
+	telnet.stop()
+	cp.stop()

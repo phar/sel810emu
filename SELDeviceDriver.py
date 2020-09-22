@@ -6,6 +6,8 @@ import socket
 import struct
 import json
 
+INTERRUPT_CONNECT = 0x4000
+
 
 class ExternalUnitHandler():
 	def __init__(self, devicenode, chardev=False):
@@ -17,6 +19,8 @@ class ExternalUnitHandler():
 		self.thread = threading.Thread(target=self.socket_handler, args=(0,))
 		self.rq = queue.Queue()
 		self.wq = queue.Queue()
+		self.ceu = 0
+#		self.ceuevents = {} #drivers must overide this
 		self.thread.start()
 
 	def socket_handler(self,arg):
@@ -64,18 +68,37 @@ class ExternalUnitHandler():
 			buff += self.sock.recv(s - len(buff))
 		return json.loads(buff)
 
+	def event(self,event):
+		if (self.ceu & INTERRUPT_CONNECT) and event in self.ceuevents:
+			if self.ceu & selc.ceuevents[event]:
+				self.wq.put(("i", self.ceu & self.ceuevents[event]))
+
+	def update_ceu(self,ceu):
+		'''left to the driver to handle'''
+		pass
+		
+	def update_teu(self,ceu):
+		'''left to the driver to handle'''
+		return True
+		
 	def handle_configure(self, val):
 		print("ceu command!")
-		ret = 0x11
-		self.wq.put(("c",ret))
+		self.ceu = val
+		self.update_ceu(self.ceu)
+		self.wq.put(("c",self.ceu))
 
 	def handle_test(self, val):
 		print("teu command!")
-		ret = 0x22
-		self.wq.put(("t",ret))
+		ret = True
+		if self.update_teu(val) == True:
+			self.wq.put(("t",True))
+		else:
+			self.wq.put(("t",False))
 
+	
 #----- these are from the emulators perspective
 	def handle_write(self, val):
+		print("mooo",val)
 		self.rq.put(val)
 		self.wq.put(("w", True))
 
@@ -109,27 +132,27 @@ class ExternalUnitHandler():
 			return False
 
 
-if __name__ == '__main__':
-	e = ExternalUnitHandler("/tmp/SEL810_asr33")
-
-	HOST = "0.0.0.0"
-	PORT = 9999
-
-	s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-	s.bind((HOST, PORT))
-	s.listen()
-	conn, addr = s.accept()
-
-	pollerrObject = select.poll()
-	while(e.connected):
-
-		pollerrObject.register(conn, select.POLLIN | select.POLLERR | select.POLLHUP)
-		if e.pollread():
-			conn.send(e.read() ^ 0x80)
-
-		for descriptor, Event in fdVsEvent:
-			if Event & (select.POLLERR | select.POLLHUP):
-				pass
-				
-			if Event & select.POLLIN:
-				e.write(bytes(int(conn.recv(1)) | 0x80))
+#if __name__ == '__main__':
+#	e = ExternalUnitHandler("/tmp/SEL810_asr33")
+#
+#	HOST = "0.0.0.0"
+#	PORT = 9999
+#
+#	s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+#	s.bind((HOST, PORT))
+#	s.listen()
+#	conn, addr = s.accept()
+#
+#	pollerrObject = select.poll()
+#	while(e.connected):
+#
+#		pollerrObject.register(conn, select.POLLIN | select.POLLERR | select.POLLHUP)
+#		if e.pollread():
+#			conn.send(e.read() ^ 0x80)
+#
+#		for descriptor, Event in fdVsEvent:
+#			if Event & (select.POLLERR | select.POLLHUP):
+#				pass
+#
+#			if Event & select.POLLIN:
+#				e.write(bytes(int(conn.recv(1)) | 0x80))
