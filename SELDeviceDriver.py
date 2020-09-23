@@ -31,7 +31,7 @@ class ExternalUnitNotConnected(Exception):
 
 
 class ExternalUnit():
-	def __init__(self,cpu, name,chardev=False):
+	def __init__(self,cpu, name,iogroup=0,chardev=False):
 		self.cpu = cpu
 		self.name = name
 		self.read_buffer = []
@@ -54,6 +54,7 @@ class ExternalUnit():
 		self.w = 0
 		self.ready = 0
 		self.iodelay = 1
+		self.iogroup=iogroup
 		try:
 			os.unlink(self.socketfn)
 		except OSError:
@@ -109,7 +110,8 @@ class ExternalUnit():
 										elif t == '?':
 											self.rdyresp.set()
 										elif t == 'i': #interrupt
-											pass
+											if ((self.cpu.registers["Interrupt"].read() &  0x7000) >> 8) == self.iogroup:
+												self.cpu.fire_priority_interrupt(self.iogroup, v)
 
 								if self.wq.qsize():
 									try:
@@ -247,9 +249,9 @@ class ExternalUnitHandler():
 		return json.loads(buff)
 
 	def event(self,event):
-		if (self.ceu & INTERRUPT_CONNECT) and event in self.ceuevents:
-			if self.ceu & selc.ceuevents[event]:
-				self.wq.put(("i", self.ceu & self.ceuevents[event]))
+		if (self.ceu & INTERRUPT_CONNECT) and (event,interrupable,level) in self.ceuevents:
+			if (self.ceu & selc.ceuevents[event]) and  interrupable:
+				self.wq.put(("i", level))
 
 	def update_ceu(self,ceu):
 		'''left to the driver to handle'''

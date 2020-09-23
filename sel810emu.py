@@ -14,7 +14,7 @@ from cpserver import *
 #  interrupts
 #  variable base register
 #  BTC block transfer controller
-#
+# check index pointer math
 #Maximum Number of BTC's per Computer  8
 #Maximum Number of CGP's per Computer   6
 #Maximum Number of Peripheral Devices per BTC  16
@@ -127,37 +127,35 @@ class SEL810CPU():
 		driver_positive_edge_tasks = []
 		driver_negative_edge_tasks = []
 
-		self.external_units = {0:ExternalUnit(self,"nulldev"),
-							   1:ExternalUnit(self,"asr33",chardev=True),
-							   2:ExternalUnit(self,"paper tape",chardev=True),
-							   3:ExternalUnit(self,"card punch",chardev=True),
-							   4:ExternalUnit(self,"card reader",chardev=True),
-							   5:ExternalUnit(self,"line printer",chardev=True),
-							   6:ExternalUnit(self,"TCU 1"),
-							   7:ExternalUnit(self,"TCU 2"),
-							   10:ExternalUnit(self,"typewriter"),
-							   11:ExternalUnit(self,"X-Y plotter"),
-							   12:ExternalUnit(self,"interval timer"),
-							   13:ExternalUnit(self,"movable head disc"),
-							   14:ExternalUnit(self,"CRT"),
-							   15:ExternalUnit(self,"fixed head disc"),
-				
-							   32:ExternalUnit(self,"NIXIE Minute Second"),
-							   33:ExternalUnit(self,"NIXIE Day Hour"),
-							   34:ExternalUnit(self,"NIXIE Months"),
-							   35:ExternalUnit(self,"SWITCH0"),
-							   36:ExternalUnit(self,"SWITCH1"),
-							   37:ExternalUnit(self,"SWITCH2"),
-							   38:ExternalUnit(self,"RELAY0"),
-							   39:ExternalUnit(self,"RELAY1"),
-							   40:ExternalUnit(self,"SENSE0"),
-							   50:ExternalUnit(self,"SENSE1"),
+		self.external_units = {0:ExternalUnit(self,"nulldev",iogroup=0),
+							   1:ExternalUnit(self,"asr33",iogroup=0,chardev=True),
+							   2:ExternalUnit(self,"paper tape",iogroup=0,chardev=True),
+							   3:ExternalUnit(self,"card punch",iogroup=0,chardev=True),
+							   4:ExternalUnit(self,"card reader",iogroup=0,chardev=True),
+							   5:ExternalUnit(self,"line printer",iogroup=0,chardev=True),
+							   6:ExternalUnit(self,"TCU 1",iogroup=0),
+							   7:ExternalUnit(self,"TCU 2",iogroup=0),
+							   10:ExternalUnit(self,"typewriter",iogroup=0),
+							   11:ExternalUnit(self,"X-Y plotter",iogroup=0),
+							   12:ExternalUnit(self,"interval timer",iogroup=0),
+							   13:ExternalUnit(self,"movable head disc",iogroup=0),
+							   14:ExternalUnit(self,"CRT",iogroup=0),
+							   15:ExternalUnit(self,"fixed head disc",iogroup=0),
+							   32:ExternalUnit(self,"NIXIE Minute Second",iogroup=0),
+							   33:ExternalUnit(self,"NIXIE Day Hour",iogroup=0),
+							   34:ExternalUnit(self,"NIXIE Months",iogroup=0),
+							   35:ExternalUnit(self,"SWITCH0",iogroup=0),
+							   36:ExternalUnit(self,"SWITCH1",iogroup=0),
+							   37:ExternalUnit(self,"SWITCH2",iogroup=0),
+							   38:ExternalUnit(self,"RELAY0",iogroup=0),
+							   39:ExternalUnit(self,"RELAY1",iogroup=0),
+							   40:ExternalUnit(self,"SENSE0",iogroup=0),
+							   50:ExternalUnit(self,"SENSE1",iogroup=0),
 
 }
 		
 		
 		if self.type == SEL810ATYPE:
-
 			b_reg_cell = RAM_CELL()
 			self.registers = {
 				"Program Counter":RAM_CELL(width=15),
@@ -169,6 +167,7 @@ class SEL810CPU():
 				"VBR Register":RAM_CELL(width=6),
 				"Control Switches":RAM_CELL(),
 				"Stall Counter":RAM_CELL(width=6),
+				"Interrupt Register":RAM_CELL(),
 			}
 
 		elif self.type == SEL810BTYPE:
@@ -180,22 +179,24 @@ class SEL810CPU():
 				"Protection Register":RAM_CELL(),
 				"VBR Register":RAM_CELL(width=6),
 				"Control Switches":RAM_CELL(),
+				"Stall Counter":RAM_CELL(width=6),
+				"Interrupt Register":RAM_CELL(),
 			}
 		self.cyclecount = 0
 
-		self.t_register = 0
-	
 		self.latch = {	"halt":True,#start halted
 						"iowait":False,
 						"overflow":False,
 						"stall":False,
+						"master_clear":False,
+						"parity":False,
+						"cold_boot":True,
 						"index_pointer":False}
 		
 		self.load_core_memory()
 		
 		self.stall_ticker = 0
 		self.stal_ptr = 0
-		
 		self.cpthread = threading.Thread(target=control_panel_backend, args=(self,))
 		self.cpthread.start()
 
@@ -214,7 +215,7 @@ class SEL810CPU():
 
 	def _increment_pc(self,incrnum=1):
 		self.registers["Program Counter"].write(self.registers["Program Counter"].read() + incrnum )
-
+	
 	def _next_pc(self):
 		return (self.registers["Program Counter"].read() + 1) & MAX_MEM_SIZE
 
@@ -271,7 +272,7 @@ class SEL810CPU():
 
 	def panelswitch_step_neg_edge(self):
 		self.registers["Instruction"].write(self.ram[self.registers["Program Counter"].read()].read())
-
+		self.latch["parity"] = self.registers["Instruction"].parity #bit of a hack but results in the correct behavior.. cannot set parity from control panel
 
 	def _stall_counter_task(self,cpu):
 		if cpu.registers["Program Counter"].read_signed() == self.stall_ptr: #i think this whole construct assumes time ticks as peripherals wait..
@@ -766,10 +767,12 @@ class SEL810CPU():
 				self._increment_pc()
 
 			elif op.nmemonic == "PID":
-				self._increment_pc()
+				self.registers["Interrupt"].write(self.registers["Interrupt"].read()   ^  self.ram[self.registers["Program Counter"].read() + 1].read())
+				self._increment_pc(2)
 				
 			elif op.nmemonic == "PIE":
-				self._increment_pc()
+				self.registers["Interrupt"].write( self.registers["Interrupt"].read()   |     self.ram[self.registers["Program Counter"].read() + 1].read())
+				self._increment_pc(2)
 		else:
 			pass
 			
@@ -836,6 +839,21 @@ EXIT_FLAG = False
 
 def control_panel_backend(cpu):
 	while cpu._shutdown == False:
+		if cpu.latch["cold_boot"] == True:
+			cpu.latch["master_clear"] = True
+	
+		if cpu.latch["master_clear"] == True:
+			for n,v in cpu.registers.items():
+				cpu.registers[n].write(0)
+			for n,v in cpu.latch.items():
+				cpu.latch[n] = False
+			cpu.latch["halt"] = True
+
+		if cpu.latch["cold_boot"] == True:
+			cpu.latch["cold_boot"] = False
+			self._increment_cycle_count(32)
+			self.cpu.fire_pf_restore_interrupt()
+
 		if cpu.cpcmdqueue.qsize():
 			(c, data) = cpu.cpcmdqueue.get()
 			if c == "s":
@@ -860,6 +878,7 @@ def control_panel_backend(cpu):
 			elif c == "q":
 				running = False
 				
+	
 		if not cpu.latch["halt"]:
 			cpu.panelswitch_step_neg_edge()
 			cpu.panelswitch_step_pos_edge()
