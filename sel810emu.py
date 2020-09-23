@@ -128,19 +128,19 @@ class SEL810CPU():
 		driver_negative_edge_tasks = []
 
 		self.external_units = {0:ExternalUnit(self,"nulldev",iogroup=0),
-							   1:ExternalUnit(self,"asr33",iogroup=0,chardev=True),
-							   2:ExternalUnit(self,"paper tape",iogroup=0,chardev=True),
-							   3:ExternalUnit(self,"card punch",iogroup=0,chardev=True),
-							   4:ExternalUnit(self,"card reader",iogroup=0,chardev=True),
-							   5:ExternalUnit(self,"line printer",iogroup=0,chardev=True),
-							   6:ExternalUnit(self,"TCU 1",iogroup=0),
-							   7:ExternalUnit(self,"TCU 2",iogroup=0),
-							   10:ExternalUnit(self,"typewriter",iogroup=0),
-							   11:ExternalUnit(self,"X-Y plotter",iogroup=0),
-							   12:ExternalUnit(self,"interval timer",iogroup=0),
-							   13:ExternalUnit(self,"movable head disc",iogroup=0),
-							   14:ExternalUnit(self,"CRT",iogroup=0),
-							   15:ExternalUnit(self,"fixed head disc",iogroup=0),
+							   1:ExternalUnit(self,"asr33",btc=0,iogroup=0,chardev=True),
+							   2:ExternalUnit(self,"paper tape",btc=1,iogroup=0,chardev=True),
+							   3:ExternalUnit(self,"card punch",btc=2,iogroup=0,chardev=True),
+							   4:ExternalUnit(self,"card reader",btc=3,iogroup=0,chardev=True),
+							   5:ExternalUnit(self,"line printer",btc=4,iogroup=0,chardev=True),
+							   6:ExternalUnit(self,"TCU 1",btc=5,iogroup=0),
+							   7:ExternalUnit(self,"TCU 2",btc=6,iogroup=0),
+							   10:ExternalUnit(self,"typewriter",btc=7,iogroup=0),
+							   11:ExternalUnit(self,"X-Y plotter",btc=8,iogroup=0),
+							   12:ExternalUnit(self,"interval timer",btc=0,iogroup=0),
+							   13:ExternalUnit(self,"movable head disc",btc=10,iogroup=0),
+							   14:ExternalUnit(self,"CRT",btc=11,iogroup=0),
+							   15:ExternalUnit(self,"fixed head disc",btc=12,iogroup=0),
 							   32:ExternalUnit(self,"NIXIE Minute Second",iogroup=0),
 							   33:ExternalUnit(self,"NIXIE Day Hour",iogroup=0),
 							   34:ExternalUnit(self,"NIXIE Months",iogroup=0),
@@ -236,17 +236,6 @@ class SEL810CPU():
 		elif 13 > shifts and shifts < 16:
 			self._increment_cycle_count(5)
 			
-			
-	def _resolve_indirect_address(self,base,m,i,x):
-		#M functions only if the Indirect Flag (bit5)isa "1". Ifbit5andbit6 are both "1" bits the MSB of the program counter is merged with the Indirect Address. If bit 5 is a "1" andbit6isa "0"theMSBofthe Indirect Address is set to a "0". This feature allows the program to be executed in upper memory (MAP 40 or greater) in the same manner as it is executed in lower memory.
-		
-		if i:
-			val =  self.ram[self.ram[(self.registers["Program Counter"].read() & 0x4000) | ((base + (x * self.registers["Index Register"].read_signed())) & MAX_MEM_SIZE)].read_signed()].read_signed()
-		else:
-			val =  self.ram[(base + (x * self.registers["Index Register"].read_signed())) & MAX_MEM_SIZE].read_signed()
-			
-		return val
-		
 		
 	def fire_60_hz_interrupt(self):
 		pass #fixme i have no idea where this fires
@@ -275,30 +264,55 @@ class SEL810CPU():
 		self.latch["parity"] = self.registers["Instruction"].parity #bit of a hack but results in the correct behavior.. cannot set parity from control panel
 
 	def _stall_counter_task(self,cpu):
-		if cpu.registers["Program Counter"].read_signed() == self.stall_ptr: #i think this whole construct assumes time ticks as peripherals wait..
-			cpu.registers["Stall Counter"].write_signed(cpu.registers["Stall Counter"].read_signed() + 1)
+		if cpu.registers["Program Counter"].read() == self.stall_ptr: #i think this whole construct assumes time ticks as peripherals wait..
+			cpu.registers["Stall Counter"].write(cpu.registers["Stall Counter"].read() + 1)
 			
 		if self.stall_ticker == STALL_TICKER_COUNT:
 			self.latch["stall"] = True
 		
+		
+	def get_current_map_addr(self):
+		return  self.registers["Program Counter"].read() & 0xFC00
+	
+	def _resolve_address(self,base,map,indir,index):
+				
+		if map:
+			base = base + self.get_current_map_addr()
+			
+		if index:
+			if self.latch["index_pointer"]:
+				base = base + self.registers["Index Register"].read()
+			else:
+				base = base + self.registers["B Register"].read()
+
+	
+		if indir:
+			base = self.ram[base].read()
+
+		return base & MAX_MEM_SIZE
+
 			
 	def panelswitch_step_pos_edge(self):
 		op  = SELOPCODE(opcode=self.registers["Instruction"].read())
 		if op.nmemonic in SEL810_OPCODES:
 		
 			if "address" in op.fields:
-#				map = op.fields["m"]  #left as a reminder
-				address = op.fields["address"]
-				if op.fields["i"]:
-					address = self.ram[address].read_signed()
+				address = self._resolve_address(op.fields["address"], op.fields["m"],op.fields["i"],op.fields["x"])
+
+##				map = op.fields["m"]  #left as a reminder
+#				address = op.fields["address"]
+#				if op.fields["i"]:
+#					address = self.ram[address].read()
 				
 			if op.nmemonic == "LAA":
-				self.registers["A Register"].write(self.ram[(address + (op.fields["x"] * self.registers["Index Register"].read_signed())) & MAX_MEM_SIZE].read())
+#				self.registers["A Register"].write(self.ram[(address + (op.fields["x"] * self.registers["Index Register"].read())) & MAX_MEM_SIZE].read())
+				self.registers["A Register"].write(self.ram[address].read())
 				self._increment_cycle_count(2)
 				self._increment_pc()
 
 			elif op.nmemonic == "LBA":
-				self.registers["B Register"].write(self.ram[(address + (op.fields["x"] * self.registers["Index Register"].read_signed())) & MAX_MEM_SIZE].read_signed())
+#				self.registers["B Register"].write(self.ram[(address + (op.fields["x"] * self.registers["Index Register"].read())) & MAX_MEM_SIZE].read_signed())
+				self.registers["B Register"].write(self.ram[address].read())
 				self._increment_cycle_count(2)
 				self._increment_pc()
 
@@ -345,7 +359,8 @@ class SEL810CPU():
 				self._increment_pc()
 							
 			elif op.nmemonic == "BRU":
-				self.registers["Program Counter"].write(address + ( op.fields["x"] * self.registers["Index Register"].read_signed()))
+#				self.registers["Program Counter"].write(address + ( op.fields["x"] * self.registers["Index Register"].read_signed()))
+				self.registers["Program Counter"].write(address)
 				self._increment_cycle_count(2)
 				
 			elif op.nmemonic == "SPB":
@@ -383,7 +398,7 @@ class SEL810CPU():
 					addr = addridx & 0x3fff
 					i = (0x4000 & addridx) >> 14
 					x = (0x8000 & addridx) >> 15
-					val = self._resolve_indirect_address(address,op.fields["m"],i,x)
+					val = self._resolve_address(address,op.fields["m"],i,x)
 				else:
 					val  = self.ram[self._next_pc()].read_signed()
 					
@@ -405,7 +420,7 @@ class SEL810CPU():
 					addr = addridx & 0x3fff
 					i = (0x4000 & addridx) >> 14
 					x = (0x8000 & addridx) >> 15
-					val = self._resolve_indirect_address(address,op.fields["m"],i,x)
+					val = self._resolve_address(address,op.fields["m"],i,x)
 				else:
 					val  = self.ram[self._next_pc()].read_signed()
 					
@@ -880,6 +895,14 @@ def control_panel_backend(cpu):
 				
 	
 		if not cpu.latch["halt"]:
+			for unit in cpu.external_units():
+				if (unit.ceu & 0x8000) and (self.btc == True) and unit.unit_ready() and (unit.btc_wc > 0):
+					cpu.ram[unit.btc_cwa] = unit.unit_read()#this isnt right
+					unit.btc_wc = (unit.btc_wc - 1)
+					unit.btc_cwa = (unit.btc_cwa + 1) & 0xffff
+					self._increment_cycle_count(2)
+					break;
+					
 			cpu.panelswitch_step_neg_edge()
 			cpu.panelswitch_step_pos_edge()
 			

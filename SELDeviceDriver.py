@@ -31,7 +31,7 @@ class ExternalUnitNotConnected(Exception):
 
 
 class ExternalUnit():
-	def __init__(self,cpu, name,iogroup=0,chardev=False):
+	def __init__(self,cpu, name,btc=None, iogroup=0,chardev=False):
 		self.cpu = cpu
 		self.name = name
 		self.read_buffer = []
@@ -53,6 +53,7 @@ class ExternalUnit():
 		self.teu = 0
 		self.w = 0
 		self.ready = 0
+		self.btc = False
 		self.iodelay = 1
 		self.iogroup=iogroup
 		try:
@@ -113,6 +114,7 @@ class ExternalUnit():
 											if ((self.cpu.registers["Interrupt"].read() &  0x7000) >> 8) == self.iogroup:
 												self.cpu.fire_priority_interrupt(self.iogroup, v)
 
+
 								if self.wq.qsize():
 									try:
 										(t,v) = self.wq.get()
@@ -150,6 +152,11 @@ class ExternalUnit():
 		self.cpu.IOwait_flag = True
 		self.wq.put(("c",command))
 		self._wait_on_event(self.ceuresp)
+		if (unit.ceu & 0x8000) and (self.btc == True):
+			self.btc_cwa = self.cpu.ram[0o1060 + (self.btc * 2)].read()
+			self.cpu_increment_cycle_count()
+			self.btc_wc = self.cpu.ram[0o1060 + (self.btc * 2) + 1].read()
+			self.cpu_increment_cycle_count()
 		self.cpu.IOwait_flag = False
 		return self.ceu
 						
