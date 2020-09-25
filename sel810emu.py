@@ -171,7 +171,7 @@ class SEL810CPU():
 				"Control Switches":RAM_CELL(),
 				"Stall Counter":RAM_CELL(width=6),
 				"Interrupt Register":RAM_CELL(),
-				"Transfer Register":b_reg_cell,
+				"Transfer Register":RAM_CELL(),
 			}
 
 		elif self.type == SEL810BTYPE:
@@ -185,6 +185,7 @@ class SEL810CPU():
 				"Control Switches":RAM_CELL(),
 				"Stall Counter":RAM_CELL(width=6),
 				"Interrupt Register":RAM_CELL(),
+				"Transfer Register":RAM_CELL(),
 			}
 		self.cyclecount = 0
 
@@ -927,6 +928,11 @@ def control_panel_backend(cpu):
 				running = False
 
 		else:
+				
+			if stepctr > 0: #note, this conflicts with master_clear, setting a step with master clear asserted will clear the step flag
+				cpu.latch["step"] = True
+				stepctr -= 1
+
 			#power fail feature
 			if cpu.latch["cold_boot"] == True:
 				cpu.latch["master_clear"] = True
@@ -938,10 +944,6 @@ def control_panel_backend(cpu):
 			if cpu.latch["display"]:
 				cpu.registers["Transfer Register"].write(cpu.ram[cpu.registers["Program Counter"].read()].read())
 				cpu.latch["display"] = False
-				
-			if stepctr > 0:
-				cpu.latch["step"] = True
-				stepctr -= 1
 
 			#because its the first boot, or someone asserted master clear, we clear registers and latches
 			if cpu.latch["master_clear"] == True:

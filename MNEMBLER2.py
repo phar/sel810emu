@@ -595,7 +595,7 @@ class SELOPCODE(dict):
 		binary = []
 		if not self.ispseudo_opcode:
 			if "address" in self.fields:  #hack for map0
-				if (current_addr  > 512) and self._resolve_to_value( self.fields["address"]) < 512: #map0 if we're not in map0 but the address is
+				if (current_addr  > 512) and self._resolve_to_value( self.fields["address"], current_addr, symbols) < 512: #map0 if we're not in map0 but the address is
 					self.fields["m"] = False
 
 			for n, (s,e) in self.field_spec.items():
@@ -1073,7 +1073,7 @@ class SEL810_ASSEMBLER():
 # BES
 
 if __name__ == '__main__':
-	asm = SEL810_ASSEMBLER("sel810asm/asm/HELLO_WORLD.ASM")#("sel810asm/asm/CLT4_V1.ASM")#("sel810asm/asm/boot.asm")
+	asm = SEL810_ASSEMBLER("sel810asm/asm/boot.asm") #sel810asm/asm/HELLO_WORLD.ASM")#("sel810asm/asm/CLT4_V1.ASM")#("sel810asm/asm/boot.asm")
 	asm.build_symbols()
 	print(asm.macros)
 	asm.build_constants()
