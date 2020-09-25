@@ -943,11 +943,6 @@ def control_panel_backend(cpu):
 				cpu.latch["step"] = True
 				stepctr -= 1
 
-			if not cpu.latch["halt"] or cpu.latch["step"]:
-				cpu.step()
-				if stepctr: #only prints on stepping
-					print("(next op:%s)" % cpu.get_cpu_state()["assembler"]) #probably not the way to do this anymore
-
 			#because its the first boot, or someone asserted master clear, we clear registers and latches
 			if cpu.latch["master_clear"] == True:
 				for n,v in cpu.registers.items():
@@ -956,7 +951,12 @@ def control_panel_backend(cpu):
 					cpu.latch[n] = False
 				cpu.latch["halt"] = True
 				cpu.latch["master_clear"] = False
-				
+
+			if not cpu.latch["halt"] or cpu.latch["step"]:
+				cpu.step()
+				if stepctr: #only prints on stepping
+					print("(next op:%s)" % cpu.get_cpu_state()["assembler"]) #probably not the way to do this anymore
+
 			else:
 				time.sleep(.1)
 				
