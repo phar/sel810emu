@@ -75,7 +75,7 @@ class ExternalUnit():
 		servpoller = select.poll()
 		servpoller.register(self.sock, select.POLLIN )
 		while(self.cpu._shutdown == False and self._shutdown == False):
-				sfdVsEvent = servpoller.poll(1)
+				sfdVsEvent = servpoller.poll(250)
 				if len(sfdVsEvent):
 					descriptor, sEvent = sfdVsEvent[0]
 					if sEvent & select.POLLIN:

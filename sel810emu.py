@@ -20,7 +20,7 @@ from cpserver import *
 #Maximum Number of Peripheral Devices per BTC  16
 #RAM should save out to a non-volatile file since the core memory is
 #join threads on exit
-#
+#badopcode on invalid instructions
 #
 
 
@@ -168,6 +168,7 @@ class SEL810CPU():
 				"Control Switches":RAM_CELL(),
 				"Stall Counter":RAM_CELL(width=6),
 				"Interrupt Register":RAM_CELL(),
+				"Transfer Register":b_reg_cell,
 			}
 
 		elif self.type == SEL810BTYPE:
@@ -190,7 +191,11 @@ class SEL810CPU():
 						"stall":False,
 						"master_clear":False,
 						"parity":False,
+						"display":False,
+						"enter":False,
+						"step":False,
 						"cold_boot":True,
+						"carry":False,
 						"index_pointer":False}
 		
 		self.load_core_memory()
@@ -209,7 +214,7 @@ class SEL810CPU():
 
 	def load_core_memory(self):
 		try:
-			self.loadAtAddress(0,"sel810.coremem")
+			self.load_at_address(0,"sel810.coremem")
 		except: #if we cant load the file, no worries
 			pass
 
@@ -262,6 +267,8 @@ class SEL810CPU():
 	def panelswitch_step_neg_edge(self):
 		self.registers["Instruction"].write(self.ram[self.registers["Program Counter"].read()].read())
 		self.latch["parity"] = self.registers["Instruction"].parity #bit of a hack but results in the correct behavior.. cannot set parity from control panel
+			
+
 
 	def _stall_counter_task(self,cpu):
 		if cpu.registers["Program Counter"].read() == self.stall_ptr: #i think this whole construct assumes time ticks as peripherals wait..
@@ -272,7 +279,7 @@ class SEL810CPU():
 		
 		
 	def get_current_map_addr(self):
-		return  self.registers["Program Counter"].read() & 0xFC00
+		return  self.registers["Program Counter"].read() & 0xfc00
 	
 	def _resolve_address(self,base,map,indir,index):
 				
@@ -298,20 +305,13 @@ class SEL810CPU():
 		
 			if "address" in op.fields:
 				address = self._resolve_address(op.fields["address"], op.fields["m"],op.fields["i"],op.fields["x"])
-
-##				map = op.fields["m"]  #left as a reminder
-#				address = op.fields["address"]
-#				if op.fields["i"]:
-#					address = self.ram[address].read()
-				
+			
 			if op.nmemonic == "LAA":
-#				self.registers["A Register"].write(self.ram[(address + (op.fields["x"] * self.registers["Index Register"].read())) & MAX_MEM_SIZE].read())
 				self.registers["A Register"].write(self.ram[address].read())
 				self._increment_cycle_count(2)
 				self._increment_pc()
 
 			elif op.nmemonic == "LBA":
-#				self.registers["B Register"].write(self.ram[(address + (op.fields["x"] * self.registers["Index Register"].read())) & MAX_MEM_SIZE].read_signed())
 				self.registers["B Register"].write(self.ram[address].read())
 				self._increment_cycle_count(2)
 				self._increment_pc()
@@ -327,7 +327,7 @@ class SEL810CPU():
 				self._increment_pc()
 
 			elif op.nmemonic == "AMA": ##CARRY
-				if (self.registers["A Register"].read_signed() + self.ram[address].read_signed()) > 0xffff:
+				if (self.registers["A Register"].read_signed() + self.ram[address].read_signed() + self.latch["carry"]) > 0x7fff:
 					self.latch["overflow"] = True
 				self.registers["A Register"].write (self.registers["A Register"].read_signed() + self.ram[address].read_signed())
 				self._increment_cycle_count(2)
@@ -336,7 +336,7 @@ class SEL810CPU():
 			elif op.nmemonic == "SMA": #CARRY
 				if (self.registers["A Register"].read_signed() - self.ram[address].read_signed()) < 0:
 					self.latch["overflow"] = True
-				self.registers["A Register"].write_signed(self.registers["A Register"].read_signed() - self.ram[address].read_signed())
+				self.registers["A Register"].write_signed(self.registers["A Register"].read_signed() - self.ram[address].read_signed() - self.latch["carry"])
 				self._increment_cycle_count(2)
 				self._increment_pc()
 
@@ -359,7 +359,6 @@ class SEL810CPU():
 				self._increment_pc()
 							
 			elif op.nmemonic == "BRU":
-#				self.registers["Program Counter"].write(address + ( op.fields["x"] * self.registers["Index Register"].read_signed()))
 				self.registers["Program Counter"].write(address)
 				self._increment_cycle_count(2)
 				
@@ -396,8 +395,8 @@ class SEL810CPU():
 				if op.fields["i"]:
 					addridx = self.ram[self._next_pc()].read_signed()
 					addr = addridx & 0x3fff
-					i = (0x4000 & addridx) >> 14
-					x = (0x8000 & addridx) >> 15
+					i = (0x4000 & addridx) > 0
+					x = (0x8000 & addridx) > 0
 					val = self._resolve_address(address,op.fields["m"],i,x)
 				else:
 					val  = self.ram[self._next_pc()].read_signed()
@@ -418,8 +417,8 @@ class SEL810CPU():
 				if op.fields["i"]:
 					addridx = self.ram[self._next_pc()].read_signed()
 					addr = addridx & 0x3fff
-					i = (0x4000 & addridx) >> 14
-					x = (0x8000 & addridx) >> 15
+					i = (0x4000 & addridx) > 0
+					x = (0x8000 & addridx) > 0
 					val = self._resolve_address(address,op.fields["m"],i,x)
 				else:
 					val  = self.ram[self._next_pc()].read_signed()
@@ -525,41 +524,41 @@ class SEL810CPU():
 				self._increment_cycle_count(1)
 				self._increment_pc()
 
-			elif op.nmemonic == "NEG": #fixme
-				self.registers["A Register"].write_signed(self.registers["B Register"].raw_read()) #twoscomplement applied on write()
+			elif op.nmemonic == "NEG": #fixme "OVERFLOW if operand is minus full scale" "carry"
+				self.registers["A Register"].write_signed(self.registers["A Register"].read()) #twoscomplement applied on write()
 				self._increment_cycle_count()
 				self._increment_pc()
 
 			elif op.nmemonic == "CLA":
-				self.registers["A Register"].write_signed(0)
+				self.registers["A Register"].write(0)
 				self._increment_cycle_count()
 				self._increment_pc()
 
 			elif op.nmemonic == "TBA":
-				self.registers["A Register"].write_signed(self.registers["B Register"].read_signed())
-				self._increment_cycle_count(1)
+				self.registers["A Register"].write(self.registers["B Register"].read())
+				self._increment_cycle_count()
 				self._increment_pc()
 				 
 			elif op.nmemonic == "TAB":
-				self.registers["B Register"].write_signed(self.registers["A Register"].read_signed())
-				self._increment_cycle_count(1)
+				self.registers["B Register"].write(self.registers["A Register"].read())
+				self._increment_cycle_count()
 				self._increment_pc()
 
 			elif op.nmemonic == "IAB":
-				t = self.registers["A Register"].read_signed()
-				self.registers["A Register"].write_signed(self.registers["B Register"].read_signed())
-				self.registers["B Register"].write_signed(t)
+				t = self.registers["A Register"].read()
+				self.registers["A Register"].write(self.registers["B Register"].read())
+				self.registers["B Register"].write(t)
 				self._increment_pc()
-				self._increment_cycle_count(1)
+				self._increment_cycle_count()
 				
 			elif op.nmemonic == "CSB":
 				if self.registers["B Register"].read() & 0x8000:
-					self.carry_flag = True
+					self.latch["carry"]  = True
 				else:
-					self.carry_flag = False
+					self.latch["carry"]  = False
 				self.registers["B Register"].write_signed(self.registers["A Register"].raw_read() & 0x7fff)
 				self._increment_pc()
-				self._increment_cycle_count(1)
+				self._increment_cycle_count()
 				
 			elif op.nmemonic == "RSA":
 				s  = self.registers["A Register"].read() & 0x8000
@@ -629,7 +628,7 @@ class SEL810CPU():
 			elif op.nmemonic == "SAS":
 				if self.registers["A Register"].read_signed() == 0:
 					self._increment_pc()
-				elif self.registers["A Register"].read_signed()> 0:
+				elif self.registers["A Register"].read_signed() > 0:
 					self._increment_pc(2)
 				self._increment_pc()
 				self._increment_cycle_count(1)
@@ -662,7 +661,7 @@ class SEL810CPU():
 
 			elif op.nmemonic == "IBS":
 				self.registers["B Register"].write_signed(self.registers["B Register"].read_signed() + 1)
-				if self.registers["B Register"].read_signed()  == 0:
+				if self.registers["B Register"].read_signed()  >= 0:
 					self._increment_pc(2)
 				else:
 					self._increment_pc()
@@ -693,16 +692,16 @@ class SEL810CPU():
 				self._increment_cycle_count(1)
 				self._increment_pc()
 
-			elif op.nmemonic == "CNS":
+			elif op.nmemonic == "CNS": #fixme overflow
 				self._increment_cycle_count(1)
 				self._increment_pc()
 				
-			elif op.nmemonic == "TOI":
+			elif op.nmemonic == "TOI": #fixme
 				self._increment_cycle_count(1)
 				self._increment_pc()
 
 			elif op.nmemonic == "LOB":
-				self.registers["Program Counter"].write(self.ram[self._next_pc()])
+				self.registers["Program Counter"].write(self.ram[self._next_pc()].read())
 				self._increment_cycle_count(2)
 				self._increment_pc(2)
 				
@@ -712,18 +711,19 @@ class SEL810CPU():
 				self._increment_pc()
 
 			elif op.nmemonic == "STX":
-				indir = self.ram[self._next_pc()] & 0x4000
-				idx = self.ram[self._next_pc()] & 0x8000
-				addr = self.ram[self._next_pc()] & 0x3000
-				
-				if not indir:
-					self.ram[addr] = self.registers["Index Register"].read_signed()
-					self._increment_cycle_count(2)
-				else:
-					self.ram[self.ram[addr].read_signed()] = self.registers["Index Register"].read_signed()
-					self._increment_cycle_count(3) #GUESSING
-				self._increment_pc(2)
+				indir = (self.ram[self._next_pc()] & 0x4000) > 0
+				idx = (self.ram[self._next_pc()] & 0x8000) > 0
+				addr = (self.ram[self._next_pc()] & 0x3000) > 0
 
+				if indir: #address
+					self.ram[self._resolve_address(addr,op.fields["m"],indir,idx)].write(self.registers["Index Register"])
+					self._increment_cycle_count()
+				else: #immediate
+					self.ram[self._resolve_address(addr,op.fields["m"],0,0)].write(self.registers["Index Register"])
+				self._increment_cycle_count(2)
+				self._increment_pc(2)
+				
+				
 			elif op.nmemonic == "TPB":
 				self.registers["B Register"].write(self.registers["Protect Register"].read())
 				self._increment_cycle_count(1)
@@ -744,10 +744,18 @@ class SEL810CPU():
 				self._increment_cycle_count(1)
 				self._increment_pc()
 
-			elif op.nmemonic == "LIX": #fixme
+			elif op.nmemonic == "LIX":
+				indir = (self.ram[self._next_pc()] & 0x4000) > 0
+				idx = (self.ram[self._next_pc()] & 0x8000) > 0
+				addr = (self.ram[self._next_pc()] & 0x3000) > 0
+
+				if indir: #address
+					self.registers["Index Register"] = self.ram[self._resolve_address(addr,op.fields["m"],indir,idx)].read()
+					self._increment_cycle_count()
+				else: #immediate
+					self.registers["Index Register"] = self.ram[self._resolve_address(addr,op.fields["m"],0,0)].read()
 				self._increment_cycle_count(2)
-				self._increment_cycle_count(1)
-				self._increment_pc()
+				self._increment_pc(2)
 
 			elif op.nmemonic == "XPX":
 				self.latch["index_pointer"] = True
@@ -782,12 +790,17 @@ class SEL810CPU():
 				self._increment_pc()
 
 			elif op.nmemonic == "PID":
-				self.registers["Interrupt"].write(self.registers["Interrupt"].read()   ^  self.ram[self.registers["Program Counter"].read() + 1].read())
+				self.registers["Interrupt"].write(self.registers["Interrupt"].read()   ^  self.ram[self._next_pc()].read())
 				self._increment_pc(2)
 				
 			elif op.nmemonic == "PIE":
-				self.registers["Interrupt"].write( self.registers["Interrupt"].read()   |     self.ram[self.registers["Program Counter"].read() + 1].read())
+				self.registers["Interrupt"].write( self.registers["Interrupt"].read()   |     self.ram[self._next_pc()].read())
 				self._increment_pc(2)
+				
+
+			if op.nmemonic != "CSB": #the carry latch is reset at the end of the execution of all instructions except CSB
+				self.latch["carry"]  = False
+				
 		else:
 			pass
 			
@@ -798,7 +811,10 @@ class SEL810CPU():
 			state_struct[n] = v.read()
 		for n,v in self.latch.items():
 			state_struct[n] = v
+			
+		state_struct["assembler"] = SELOPCODE(opcode=self.ram[self.registers["Program Counter"].read()].read_signed()).pack_asm()[0].strip()
 		state_struct["cyclecount"] = self.cyclecount
+
 		return state_struct
 
 
@@ -809,9 +825,15 @@ class SEL810CPU():
 				
 		for n,v in self.latch.items():
 			if n in state_struct:
-				self.latch[n].write_raw (state_struct[n])
+				self.latch[n] = state_struct[n]
+				
+		if "assembler" in state_struct:
+			try:
+				self.registers["Transfer Register"] = SELOPCODE((" "*5) +  state_struct["assembler"].strip()).pack_abs(self.registers["Program Counter"].read(),{})[0]
+			except:
+				print("error parsing provided assembler")
 
-	def loadAtAddress(self,address,file):
+	def load_at_address(self,address,file):
 		binfile = loadProgramBin(file)
 		for i in range(0,len(binfile)):
 			self.ram[address+i].write(binfile[i])
@@ -823,6 +845,40 @@ class SEL810CPU():
 		for n,u in self.external_units.items():
 			u._teardown()
 		self.store_core_memory()
+		
+	def step(self):
+		#power fail feature
+		if self.latch["cold_boot"] == True:
+			self.latch["master_clear"] = True
+
+		#because its the first boot, or someone asserted master clear, we clear registers and latches
+		if self.latch["master_clear"] == True:
+			for n,v in self.registers.items():
+				self.registers[n].write(0)
+			for n,v in self.latch.items():
+				self.latch[n] = False
+			self.latch["halt"] = True
+
+		#finish up a coldboot sequence by setting the flag and firing the interrupt (FIXME this wouldnt be configured from pid/pie)
+		if self.latch["cold_boot"] == True:
+			self.latch["cold_boot"] = False
+			self._increment_cycle_count(32)
+			self.cpu.fire_pf_restore_interrupt()
+
+		#BTC emulation, there might be more nuance missing here to how different devices interleve actual traffic on the bus
+		for id, unit in self.external_units.items():
+			if (unit.ceu & 0x8000) and (self.btc == True) and unit.unit_ready() and (unit.btc_wc > 0):
+				self.ram[unit.btc_cwa] = unit.unit_read()#this isnt right
+				unit.btc_wc = (unit.btc_wc - 1)
+				unit.btc_cwa = (unit.btc_cwa + 1) & 0xffff
+				self._increment_cycle_count(2)
+				break;
+				
+		#alright.. state machine go brrr
+		self.panelswitch_step_neg_edge()
+		self.panelswitch_step_pos_edge()
+		
+		self.latch["step"] = False
 
 
 
@@ -850,39 +906,22 @@ def parse_inputint(val):
 		return None
 
 
-EXIT_FLAG = False
 
 def control_panel_backend(cpu):
+	stepctr = 0
 	while cpu._shutdown == False:
-		if cpu.latch["cold_boot"] == True:
-			cpu.latch["master_clear"] = True
-	
-		if cpu.latch["master_clear"] == True:
-			for n,v in cpu.registers.items():
-				cpu.registers[n].write(0)
-			for n,v in cpu.latch.items():
-				cpu.latch[n] = False
-			cpu.latch["halt"] = True
-
-		if cpu.latch["cold_boot"] == True:
-			cpu.latch["cold_boot"] = False
-			self._increment_cycle_count(32)
-			self.cpu.fire_pf_restore_interrupt()
 
 		if cpu.cpcmdqueue.qsize():
 			(c, data) = cpu.cpcmdqueue.get()
 			if c == "s":
-				for i in range(data):
-					cpu.panelswitch_step_neg_edge()
-					cpu.panelswitch_step_pos_edge()
-					print("(next op:%s)" % SELOPCODE(opcode=cpu.ram[cpu.registers["Program Counter"].read()].read_signed()).pack_asm()[0] ) #probably not the way to do this anymore
+				stepctr = data
 
 			elif c == "u":
 				cpu.set_cpu_state(data)
 				
 			elif c == "l":
 				(addr,file) = data
-				cpu.loadAtAddress(addr,file)
+				cpu.load_at_address(addr,file)
 				
 			elif c == "h+":
 				cpu.latch["halt"] = True
@@ -892,23 +931,30 @@ def control_panel_backend(cpu):
 
 			elif c == "q":
 				running = False
-				
-	
-		if not cpu.latch["halt"]:
-			for unit in cpu.external_units():
-				if (unit.ceu & 0x8000) and (self.btc == True) and unit.unit_ready() and (unit.btc_wc > 0):
-					cpu.ram[unit.btc_cwa] = unit.unit_read()#this isnt right
-					unit.btc_wc = (unit.btc_wc - 1)
-					unit.btc_cwa = (unit.btc_cwa + 1) & 0xffff
-					self._increment_cycle_count(2)
-					break;
-					
-			cpu.panelswitch_step_neg_edge()
-			cpu.panelswitch_step_pos_edge()
-			
+
 		else:
-			time.sleep(.1)
-		
+			
+			if cpu.latch["enter"]:
+				cpu.ram[cpu.registers["Program Counter"].read()].write(cpu.registers["Transfer Register"].read())
+					cpu.latch["enter"] = False
+
+			if cpu.latch["display"]:
+				cpu.registers["Transfer Register"].write(cpu.ram[cpu.registers["Program Counter"].read()].read())
+				cpu.latch["display"] = False
+				
+			if stepctr > 0:
+				cpu.latch["step"] = True
+				stepctr -= 1
+
+			if not cpu.latch["halt"] or cpu.latch["step"]:
+				cpu.step()
+				if stepctr: #only prints on stepping
+					print("(next op:%s)" % cpu.get_cpu_state()["assembler"]) #probably not the way to do this anymore
+			else:
+				time.sleep(.1)
+				
+				
+EXIT_FLAG = False
 
 class SEL810Shell(cmd.Cmd):
 	intro = 'Welcome to the SEL emulator/debugger. Type help or ? to list commands.\n'

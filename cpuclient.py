@@ -64,10 +64,13 @@ class ControlPanelClient():
 		self.send_packet(self.sock,("h+",None))
 
 	def set_pc(self, pc):
-		self.send_packet.put(self.sock,("u",{"Program Counter":pc}))
+		self.send_packet(self.sock,("u",{"Program Counter":pc}))
 
 	def update_panel(self,panelstruct):
-		self.send_packet.put(self.sock,("u",panelstruct))
+		self.send_packet(self.sock,("u",panelstruct))
+	
+	def load_file(self,addr,filename):
+		self.send_packet(self.sock,("l",(addr,filename)))
 		
 
 if __name__ == '__main__':

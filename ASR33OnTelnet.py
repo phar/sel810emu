@@ -75,3 +75,7 @@ class ASR33OnTelnetDriver():
 		s.close()
 		if conn is not None:
 			conn.close()
+
+
+if __name__ == '__main__':
+	pass
