@@ -21,16 +21,18 @@ from cpserver import *
 #RAM should save out to a non-volatile file since the core memory is
 #join threads on exit
 #badopcode on invalid instructions
+# core memory handler should handle storage to file on each write
 #
-
-
+#
+#
+#
+#
+#
 try:
     import readline
 except ImportError:
     readline = None
 
-
-sys.path.append("sel810asm")
 from util import *
 from MNEMBLER2 import *
 
@@ -51,7 +53,7 @@ class RAM_CELL():
 		self.prot = False
 		self.parity = False
 		self.parent = parent_array
-		self.write_signed(0x0000)
+		self.write(0x0000)
 
 	def read_signed(self):
 		return twoscmplment2dec(self.value)
@@ -82,13 +84,14 @@ class RAM_CELL():
 
 		return overflow
 	
-class MEMORY(list):
-	def __init__(self, cpu, memmax=0x7fff, options=OPTION_PROT_NONE):
+class COREMEMORY(list):
+	def __init__(self, cpu, backing_file, memmax=0x7fff, options=OPTION_PROT_NONE):
 		self.optionsmask = options
 		self.memmax = memmax
 		self.prot_reg = 0
 		self._ram = [] # [RAM_CELL()] * self.memmax
 		self.cpu = cpu
+		self.corememfile = backing_file
 
 		if self.optionsmask & OPTION_PROT_1B: #its not clear how this option works for various memory sizes
 			psize = 1024
@@ -120,7 +123,7 @@ class MEMORY(list):
 
 class SEL810CPU():
 	def __init__(self,type= SEL810ATYPE):
-		self.ram = MEMORY(self)
+		self.ram = COREMEMORY("sel810.coremem",self)
 		self.type = SEL810ATYPE
 		self.cpcmdqueue = queue.Queue()
 		self._shutdown = False
@@ -227,7 +230,7 @@ class SEL810CPU():
 	def _increment_cycle_count(self,incrnum=1):
 		for i in range(incrnum):
 				self.cyclecount += 1
-				if (self.cyclecount % CPU_HERTZ) == 0:
+				if (self.cyclecount % CPU_HERTZ) == 0: # fixme, i probably cant use cycle counter probably need a simulation timer
 						self.fire_60_hz_interrupt()
 		
 
@@ -829,7 +832,7 @@ class SEL810CPU():
 				
 		if "assembler" in state_struct:
 			try:
-				self.registers["Transfer Register"] = SELOPCODE((" "*5) +  state_struct["assembler"].strip()).pack_abs(self.registers["Program Counter"].read(),{})[0]
+				self.registers["Transfer Register"].write(SELOPCODE((" "*5) +  state_struct["assembler"].strip()).pack_abs(self.registers["Program Counter"].read(),{})[0])
 			except:
 				print("error parsing provided assembler")
 
@@ -847,17 +850,6 @@ class SEL810CPU():
 		self.store_core_memory()
 		
 	def step(self):
-		#power fail feature
-		if self.latch["cold_boot"] == True:
-			self.latch["master_clear"] = True
-
-		#because its the first boot, or someone asserted master clear, we clear registers and latches
-		if self.latch["master_clear"] == True:
-			for n,v in self.registers.items():
-				self.registers[n].write(0)
-			for n,v in self.latch.items():
-				self.latch[n] = False
-			self.latch["halt"] = True
 
 		#finish up a coldboot sequence by setting the flag and firing the interrupt (FIXME this wouldnt be configured from pid/pie)
 		if self.latch["cold_boot"] == True:
@@ -909,6 +901,8 @@ def parse_inputint(val):
 
 def control_panel_backend(cpu):
 	stepctr = 0
+	cpu.latch["cold_boot"] = True
+	
 	while cpu._shutdown == False:
 
 		if cpu.cpcmdqueue.qsize():
@@ -933,10 +927,13 @@ def control_panel_backend(cpu):
 				running = False
 
 		else:
-			
+			#power fail feature
+			if cpu.latch["cold_boot"] == True:
+				cpu.latch["master_clear"] = True
+
 			if cpu.latch["enter"]:
 				cpu.ram[cpu.registers["Program Counter"].read()].write(cpu.registers["Transfer Register"].read())
-					cpu.latch["enter"] = False
+				cpu.latch["enter"] = False
 
 			if cpu.latch["display"]:
 				cpu.registers["Transfer Register"].write(cpu.ram[cpu.registers["Program Counter"].read()].read())
@@ -950,8 +947,19 @@ def control_panel_backend(cpu):
 				cpu.step()
 				if stepctr: #only prints on stepping
 					print("(next op:%s)" % cpu.get_cpu_state()["assembler"]) #probably not the way to do this anymore
+
+			#because its the first boot, or someone asserted master clear, we clear registers and latches
+			if cpu.latch["master_clear"] == True:
+				for n,v in cpu.registers.items():
+					cpu.registers[n].write(0)
+				for n,v in cpu.latch.items():
+					cpu.latch[n] = False
+				cpu.latch["halt"] = True
+				cpu.latch["master_clear"] = False
+				
 			else:
 				time.sleep(.1)
+				
 				
 				
 EXIT_FLAG = False
