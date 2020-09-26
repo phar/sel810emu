@@ -143,10 +143,16 @@ class ExternalUnit():
 		return json.loads(buff)
 		
 	def _wait_on_event(self,event):
-		while not event.isSet():
-			event.wait(.1)  #this value ay need tweaking
-			if not event.isSet(): #a bit more forgiving on timing if it happens on the first timeout
-				self._increment_cycle_count(self.iodelay)
+		if self.connected:
+			self.cpu.latch["iowait"] = True
+			while not event.isSet():
+				event.wait(.1)  #this value ay need tweaking
+				if not event.isSet(): #a bit more forgiving on timing if it happens on the first timeout
+					self.cpu._increment_cycle_count(self.iodelay)
+			self.cpu.latch["iowait"] = False
+			return True
+		else:
+			return False
 
 	def unit_command(self,command):
 		self.cpu.IOwait_flag = True
@@ -154,9 +160,9 @@ class ExternalUnit():
 		self._wait_on_event(self.ceuresp)
 		if (unit.ceu & 0x8000) and (self.btc == True):
 			self.btc_cwa = self.cpu.ram[0o1060 + (self.btc * 2)].read()
-			self.cpu_increment_cycle_count()
+			self.cpu.cpu_increment_cycle_count()
 			self.btc_wc = self.cpu.ram[0o1060 + (self.btc * 2) + 1].read()
-			self.cpu_increment_cycle_count()
+			self.cpu.cpu_increment_cycle_count()
 		self.cpu.IOwait_flag = False
 		return self.ceu
 						
@@ -176,8 +182,9 @@ class ExternalUnit():
 	def unit_ready(self,qry):
 		self.cpu.IOwait_flag = True
 		self.wq.put(("?",qry))
-		self._wait_on_event(self.rdyresp)
-
+		self.rdyresp.wait(.1)  #this value ay need tweaking
+		if not self._wait_on_event(self.rdyresp): #if we're not connected, we're not ready but we should wait to se if the device has a character either
+			self.ready = False
 		self.cpu.IOwait_flag = False
 		return self.ready
 

@@ -84,5 +84,5 @@ if __name__ == '__main__':
 
 	while(a._shutdown == False):
 		time.sleep(1)
-		a.step()
+#		a.step()
 	a.shutdown()

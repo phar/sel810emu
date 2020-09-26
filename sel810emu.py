@@ -46,14 +46,11 @@ OPTION_PROT_NONE 	= 0
 OPTION_PROT_1B 		= 1
 OPTION_PROT_2B		= 2
 
-class RAM_CELL():
-	def __init__(self,parent_array=None, prot=None, width=16):
+class REGISTER_CELL():
+	def __init__(self,parent_array=None, width=16):
 		self.value = 0
 		self.bitwidth = width
-		self.prot = False
-		self.parity = False
 		self.parent = parent_array
-		self.write(0x0000)
 
 	def read_signed(self):
 		return twoscmplment2dec(self.value)
@@ -62,28 +59,32 @@ class RAM_CELL():
 		return self.value
 
 	def write(self,v):
-		overflow = False
-		if v > ((2**self.bitwidth) - 1):
-			overflow = True
 		self.value = v & ((2**self.bitwidth) - 1)
 		self.parity = parity_calc(self.value)
-		return overflow
+
+	def write_signed(self,v):
+		self.value = dec2twoscmplment(v & ((2**self.bitwidth) - 1),self.bitwidth)
+		self.parity = parity_calc(self.value)
+
+class RAM_CELL(REGISTER_CELL):
+	def __init__(self,parent_array, addr, prot,  width=16):
+		self.prot = False
+		self.parity = False
+		self.addr = addr
+		super().__init__(parent_array, width=width)
+
+	def write(self,v):
+		if self.parent._write_attempt(self.prot):
+			super().write(v)
+			self.parent._flush_write(self.addr)
 
 	def write_signed(self,v):
 		overflow = False
-		if v > ((2**self.bitwidth) - 1):
-			overflow = True
-			
-		if self.parent != None:
-			if self.parent._write_attempt(self.prot):
-				self.value = dec2twoscmplment(v & ((2**self.bitwidth) - 1),self.bitwidth)
-				self.parity = parity_calc(self.value)
-		else: #no parent to check with
-			self.value = dec2twoscmplment(v & ((2**self.bitwidth) - 1),self.bitwidth)
-			self.parity = parity_calc(self.value)
-
-		return overflow
+		if self.parent._write_attempt(self.prot):
+			super().write_signed(v)
+			self.parent._flush_write(self.addr)
 	
+
 class COREMEMORY(list):
 	def __init__(self, cpu, backing_file, memmax=0x7fff, options=OPTION_PROT_NONE):
 		self.optionsmask = options
@@ -91,7 +92,7 @@ class COREMEMORY(list):
 		self.prot_reg = 0
 		self._ram = [] # [RAM_CELL()] * self.memmax
 		self.cpu = cpu
-		self.corememfile = backing_file
+		self.backingfile = backing_file
 
 		if self.optionsmask & OPTION_PROT_1B: #its not clear how this option works for various memory sizes
 			psize = 1024
@@ -99,11 +100,26 @@ class COREMEMORY(list):
 			psize = 2048
 		else:
 			psize = self.memmax
-			
+
+		try:
+			binfile = loadProgramBin(self.backingfile)
+		except:
+			binfile = [0] * MAX_MEM_SIZE
+
+		self.corememfile = open(self.backingfile,"wb")
 		for i in range(0, self.memmax, psize):
 			for e in range(0,psize):
-				self._ram.append(RAM_CELL(self,i))
-				
+				cell = RAM_CELL(self,(i*psize) + e, i)
+				self._ram.append(cell)
+				if len(binfile) > (i*psize) + e:
+					cell.write(binfile[(i*psize) + e])
+				else:
+					cell.write(0)
+					
+	def _flush_write(self,addr):
+		self.corememfile.seek(addr * struct.calcsize("H"))
+		self.corememfile.write(struct.pack(">H", self[addr].read()))
+
 	def _write_attempt(self,prot_bit):
 		return 1 #will figure out the interrupt logic for this later
 		 
@@ -118,12 +134,15 @@ class COREMEMORY(list):
 		
 	def get_prot_reg(self):
 		return self.prot_reg
+		
+	def shutdown(self):
+		self.corememfile.close()
 
 
 
 class SEL810CPU():
 	def __init__(self,type= SEL810ATYPE):
-		self.ram = COREMEMORY("sel810.coremem",self)
+		self.ram = COREMEMORY(self,"sel810.coremem")
 		self.type = SEL810ATYPE
 		self.cpcmdqueue = queue.Queue()
 		self._shutdown = False
@@ -159,33 +178,33 @@ class SEL810CPU():
 		
 		
 		if self.type == SEL810ATYPE:
-			b_reg_cell = RAM_CELL()
+			b_reg_cell = REGISTER_CELL()
 			self.registers = {
-				"Program Counter":RAM_CELL(width=15),
-				"Instruction":RAM_CELL(),
+				"Program Counter":REGISTER_CELL(width=15),
+				"Instruction":REGISTER_CELL(),
 				"Index Register":b_reg_cell,
-				"A Register":RAM_CELL(),
+				"A Register":REGISTER_CELL(),
 				"B Register":b_reg_cell,
-				"Protection Register":RAM_CELL(),
-				"VBR Register":RAM_CELL(width=6),
-				"Control Switches":RAM_CELL(),
-				"Stall Counter":RAM_CELL(width=6),
-				"Interrupt Register":RAM_CELL(),
-				"Transfer Register":RAM_CELL(),
+				"Protection Register":REGISTER_CELL(),
+				"VBR Register":REGISTER_CELL(width=6),
+				"Control Switches":REGISTER_CELL(),
+				"Stall Counter":REGISTER_CELL(width=6),
+				"Interrupt Register":REGISTER_CELL(),
+				"Transfer Register":REGISTER_CELL(),
 			}
 
 		elif self.type == SEL810BTYPE:
 			self.registers = {
-				"Program Counter":RAM_CELL(width=15),
-				"Index Register":RAM_CELL(),
-				"A Register":RAM_CELL(),
-				"B Register":RAM_CELL(),
-				"Protection Register":RAM_CELL(),
-				"VBR Register":RAM_CELL(width=6),
-				"Control Switches":RAM_CELL(),
-				"Stall Counter":RAM_CELL(width=6),
-				"Interrupt Register":RAM_CELL(),
-				"Transfer Register":RAM_CELL(),
+				"Program Counter":REGISTER_CELL(width=15),
+				"Index Register":REGISTER_CELL(),
+				"A Register":REGISTER_CELL(),
+				"B Register":REGISTER_CELL(),
+				"Protection Register":REGISTER_CELL(),
+				"VBR Register":REGISTER_CELL(width=6),
+				"Control Switches":REGISTER_CELL(),
+				"Stall Counter":REGISTER_CELL(width=6),
+				"Interrupt Register":REGISTER_CELL(),
+				"Transfer Register":REGISTER_CELL(),
 			}
 		self.cyclecount = 0
 
@@ -202,7 +221,7 @@ class SEL810CPU():
 						"carry":False,
 						"index_pointer":False}
 		
-		self.load_core_memory()
+#		self.load_core_memory()
 		
 		self.stall_ticker = 0
 		self.stal_ptr = 0
@@ -210,17 +229,17 @@ class SEL810CPU():
 		self.cpthread.start()
 
 		
-	def store_core_memory(self):
-		coredata = []
-		for i in range(MAX_MEM_SIZE):
-			coredata.append(self.ram[i].read())
-		storeProgramBin("sel810.coremem",coredata)
-
-	def load_core_memory(self):
-		try:
-			self.load_at_address(0,"sel810.coremem")
-		except: #if we cant load the file, no worries
-			pass
+#	def store_core_memory(self):
+#		coredata = []
+#		for i in range(MAX_MEM_SIZE):
+#			coredata.append(self.ram[i].read())
+#		storeProgramBin("sel810.coremem",coredata)
+#
+#	def load_core_memory(self):
+#		try:
+#			self.load_at_address(0,"sel810.coremem")
+#		except: #if we cant load the file, no worries
+#			pass
 
 	def _increment_pc(self,incrnum=1):
 		self.registers["Program Counter"].write(self.registers["Program Counter"].read() + incrnum )
@@ -306,7 +325,6 @@ class SEL810CPU():
 	def panelswitch_step_pos_edge(self):
 		op  = SELOPCODE(opcode=self.registers["Instruction"].read())
 		if op.nmemonic in SEL810_OPCODES:
-		
 			if "address" in op.fields:
 				address = self._resolve_address(op.fields["address"], op.fields["m"],op.fields["i"],op.fields["x"])
 			
@@ -355,7 +373,7 @@ class SEL810CPU():
 				if  self.ram[address].read_signed() != 0: #fixme overflow is wrong
 					a = (self.registers["A Register"].read_signed() << 16 | self.registers["B Register"].read_signed()) / self.ram[address].read_signed()
 					b = (self.registers["A Register"].read_signed() << 16 | self.registers["B Register"].read_signed()) % self.ram[address].read_signed()
-					self.registers["A Register"].write_signed(a)
+					self.registers["A Register"].write_signed(int(a))
 					self.registers["B Register"].write_signed(b)
 				else:
 					self.latch["overflow"] = True
@@ -409,10 +427,18 @@ class SEL810CPU():
 					eu = self.external_units[0]
 				else:
 					eu = self.external_units[op.fields["unit"]]
+				
+				print("sdfsdfsdf",op.nmemonic)
+
+			
 				if eu.unit_ready("r") or op.fields["wait"]:
+					print("sdfsdFddWERWER")
 					eu.unit_command(val)
 					self._increment_cycle_count(1)
+					print("sdfsdFdd")
+
 				else:
+					print("sdfsdF")
 					self._increment_pc()
 				self._increment_cycle_count(4)
 				self._increment_pc()
@@ -842,16 +868,15 @@ class SEL810CPU():
 		for i in range(0,len(binfile)):
 			self.ram[address+i].write(binfile[i])
 			
-			
 	def shutdown(self):
 		self._shutdown = True
 		self.cpthread.join()
 		for n,u in self.external_units.items():
 			u._teardown()
-		self.store_core_memory()
+		self.ram.shutdown()
+#		self.store_core_memory()
 		
 	def step(self):
-
 		#finish up a coldboot sequence by setting the flag and firing the interrupt (FIXME this wouldnt be configured from pid/pie)
 		if self.latch["cold_boot"] == True:
 			self.latch["cold_boot"] = False
@@ -927,41 +952,39 @@ def control_panel_backend(cpu):
 			elif c == "q":
 				running = False
 
+
+			
+		if stepctr > 0: #note, this conflicts with master_clear, setting a step with master clear asserted will clear the step flag
+			cpu.latch["step"] = True
+			stepctr -= 1
+
+		#power fail feature
+		if cpu.latch["cold_boot"] == True:
+			cpu.latch["master_clear"] = True
+
+		if cpu.latch["enter"]:
+			cpu.ram[cpu.registers["Program Counter"].read()].write(cpu.registers["Transfer Register"].read())
+			cpu.latch["enter"] = False
+
+		if cpu.latch["display"]:
+			cpu.registers["Transfer Register"].write(cpu.ram[cpu.registers["Program Counter"].read()].read())
+			cpu.latch["display"] = False
+
+		#because its the first boot, or someone asserted master clear, we clear registers and latches
+		if cpu.latch["master_clear"] == True:
+			for n,v in cpu.registers.items():
+				cpu.registers[n].write(0)
+			for n,v in cpu.latch.items():
+				cpu.latch[n] = False
+			cpu.latch["halt"] = True
+			cpu.latch["master_clear"] = False
+
+		if not cpu.latch["halt"] or cpu.latch["step"]:
+			cpu.step()
+
 		else:
-				
-			if stepctr > 0: #note, this conflicts with master_clear, setting a step with master clear asserted will clear the step flag
-				cpu.latch["step"] = True
-				stepctr -= 1
-
-			#power fail feature
-			if cpu.latch["cold_boot"] == True:
-				cpu.latch["master_clear"] = True
-
-			if cpu.latch["enter"]:
-				cpu.ram[cpu.registers["Program Counter"].read()].write(cpu.registers["Transfer Register"].read())
-				cpu.latch["enter"] = False
-
-			if cpu.latch["display"]:
-				cpu.registers["Transfer Register"].write(cpu.ram[cpu.registers["Program Counter"].read()].read())
-				cpu.latch["display"] = False
-
-			#because its the first boot, or someone asserted master clear, we clear registers and latches
-			if cpu.latch["master_clear"] == True:
-				for n,v in cpu.registers.items():
-					cpu.registers[n].write(0)
-				for n,v in cpu.latch.items():
-					cpu.latch[n] = False
-				cpu.latch["halt"] = True
-				cpu.latch["master_clear"] = False
-
-			if not cpu.latch["halt"] or cpu.latch["step"]:
-				cpu.step()
-				if stepctr: #only prints on stepping
-					print("(next op:%s)" % cpu.get_cpu_state()["assembler"]) #probably not the way to do this anymore
-
-			else:
-				time.sleep(.1)
-				
+			time.sleep(.1)
+			
 				
 				
 EXIT_FLAG = False
@@ -987,6 +1010,8 @@ class SEL810Shell(cmd.Cmd):
 				steps = 1
 		
 		self.cpu.cpcmdqueue.put(("s",steps))
+		print("(op:%s)" % self.cpu.get_cpu_state()["assembler"]) #probably not the way to do this anymore
+
 
 	def do_toggle_run_stop(self, arg):
 		'execute until a halt is recieved'
@@ -1111,7 +1136,7 @@ if __name__ == '__main__':
 
 	shell = SEL810Shell()
 	
-	telnet = ASR33OnTelnetDriver(shell.cpu, "/tmp/SEL810_asr33","0.0.0.0",9999)
+	telnet = ASR33OnTelnetDriver(shell.cpu, "/tmp/SEL810_asr33","127.0.0.1",9999)
 	cp  = ControlPanelDriver(shell.cpu,"/tmp/SEL810_control_panel")
 	cp.start()
 	telnet.start()
