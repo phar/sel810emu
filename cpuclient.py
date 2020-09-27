@@ -23,12 +23,26 @@ class ControlPanelClient():
 		self.thread.join()
 		
 	def packet_hub(self,sock):
+		pollerObject = select.poll()
+		pollerObject.register(sock, select.POLLIN | select.POLLERR | select.POLLHUP)
+				
 		while self._shutdown == False:
-			try:
-				a = self.recv_packet(sock)
-				self.updatecb(a)
-			except:
-				self._shutdown = True
+#			try:
+				fdVsEvent = pollerObject.poll(250)
+				for descriptor, Event in fdVsEvent:
+					if Event & select.POLLIN:
+						a = self.recv_packet(sock)
+						self.updatecb(a)
+					
+					if Event & (select.POLLERR | select.POLLHUP):
+						self._shutdown = True
+						print("here")
+				print("dfs",self._shutdown)
+		print("here2")
+
+#			except:
+#				print("here")
+#				self._shutdown = True
 			
 	def send_packet(self,sock,packet):
 		try:
@@ -37,7 +51,7 @@ class ControlPanelClient():
 			sock.send(pp)
 		except:
 			print("somehting went wrong with the emulator connection")
-			self.shutdown()
+			self._shutdown = True
 			
 	def recv_packet(self,sock):
 		try:
@@ -51,7 +65,7 @@ class ControlPanelClient():
 			return json.loads(buff)
 		except:
 			print("somehting went wrong with the emulator connection")
-			self.shutdown()
+			self._shutdown = True
 			
 	def shutdown(self):
 		self._shutdown = True
@@ -77,12 +91,15 @@ if __name__ == '__main__':
 
 
 	def showuypdate(arg):
-		print(arg)
+#		print(arg)
+		pass
 
 	a = ControlPanelClient("/tmp/SEL810_control_panel",showuypdate)
 	a.start()
 
 	while(a._shutdown == False):
 		time.sleep(1)
+		print("dfpp",a._shutdown)
 #		a.step()
+	print("booos")
 	a.shutdown()

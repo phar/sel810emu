@@ -427,21 +427,14 @@ class SEL810CPU():
 					eu = self.external_units[0]
 				else:
 					eu = self.external_units[op.fields["unit"]]
-				
-				print("sdfsdfsdf",op.nmemonic)
-
-			
-				if eu.unit_ready("r") or op.fields["wait"]:
-					print("sdfsdFddWERWER")
+							
+				if eu.unit_ready("c") or op.fields["wait"]:
 					eu.unit_command(val)
 					self._increment_cycle_count(1)
-					print("sdfsdFdd")
-
 				else:
-					print("sdfsdF")
 					self._increment_pc()
 				self._increment_cycle_count(4)
-				self._increment_pc()
+				self._increment_pc(2)
 
 			elif op.nmemonic == "TEU":
 				if op.fields["i"]:
@@ -458,13 +451,13 @@ class SEL810CPU():
 				else:
 					eu = self.external_units[op.fields["unit"]]
 					
-				if eu.unit_ready("r") or op.fields["wait"]:
+				if eu.unit_ready("t") or op.fields["wait"]:
 					eu.unit_test(val)
 					self._increment_cycle_count(1)
 				else:
 					self._increment_pc()
 				self._increment_cycle_count(4)
-				self._increment_pc()
+				self._increment_pc(2)
 
 			elif op.nmemonic == "SNS":
 				if self.registers["Control Switches"].read_signed() & (1 << op.fields["unit"]):
@@ -496,7 +489,7 @@ class SEL810CPU():
 				else:
 					eu = self.external_units[op.fields["unit"]]
 
-				if eu.unit_ready("r") or op.fields["wait"]:
+				if eu.unit_ready("w") or op.fields["wait"]:
 					self._increment_cycle_count(1)
 					eu.unit_write(self.registers["A Register"].read_signed())
 					#wait
@@ -515,7 +508,7 @@ class SEL810CPU():
 				else:
 					eu = self.external_units[op.fields["unit"]]
 
-				if eu.unit_ready("w") or op.fields["wait"]:
+				if eu.unit_ready("r") or op.fields["wait"]:
 #					if not op.fields["r"]:
 ##						self.accumulator_a = 0
 #						self.registers["A Register"].write_signed(0)
@@ -1008,10 +1001,12 @@ class SEL810Shell(cmd.Cmd):
 				steps = parse_inputint(arg)
 			else:
 				steps = 1
-		
-		self.cpu.cpcmdqueue.put(("s",steps))
-		print("(op:%s)" % self.cpu.get_cpu_state()["assembler"]) #probably not the way to do this anymore
 
+		if not self.cpu.latch["iowait"]:
+			self.cpu.cpcmdqueue.put(("s",steps))
+			print("(op:%s)" % self.cpu.get_cpu_state()["assembler"]) #probably not the way to do this anymore
+		else:
+			print("cannot step while in io-wait")
 
 	def do_toggle_run_stop(self, arg):
 		'execute until a halt is recieved'

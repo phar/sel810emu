@@ -44,6 +44,7 @@ class ExternalUnit():
 		self.socketfn = os.path.join("/tmp","SEL810_" + self.name.replace(" ","_"))
 		self.wq = queue.Queue()
 		self.rq = queue.Queue()
+		self.devq = queue.Queue()
 		self.ceuresp = threading.Event()
 		self.teuresp = threading.Event()
 		self.rdyresp = threading.Event()
@@ -52,6 +53,7 @@ class ExternalUnit():
 		self.ceu = 0
 		self.teu = 0
 		self.w = 0
+		self.r = 0
 		self.ready = 0
 		self.btc = False
 		self.iodelay = 1
@@ -78,12 +80,13 @@ class ExternalUnit():
 				sfdVsEvent = servpoller.poll(250)
 				if len(sfdVsEvent):
 					descriptor, sEvent = sfdVsEvent[0]
+					
 					if sEvent & select.POLLIN:
 						self.devsock, client_address = self.sock.accept()
 						self.connected = True
 						pollerrObject = select.poll()
 						pollerrObject.register(self.devsock, select.POLLIN | select.POLLERR | select.POLLHUP)
-						while(self.connected == True and self._shutdown == False and self._shutdown == False):
+						while(self.connected == True and self.cpu._shutdown == False and self._shutdown == False):
 								fdVsEvent = pollerrObject.poll(10)
 								for descriptor, Event in fdVsEvent:
 									if Event & (select.POLLERR | select.POLLHUP):
@@ -92,11 +95,11 @@ class ExternalUnit():
 											break
 										
 									if Event & select.POLLIN:
-										try:
-											(t,v) = self.recv_packet()
-										except:
-											self.connected = False
-											self.devsock.close()
+#										try:
+										(t,v) = self.recv_packet()
+#										except:
+#											self.connected = False
+#											self.devsock.close()
 										if t == 'c':
 											self.ceu = v
 											self.ceuresp.set()
@@ -107,21 +110,23 @@ class ExternalUnit():
 											self.w = v
 											self.wresp.set()
 										elif t == 'r':
+											self.r = v
 											self.rresp.set()
 										elif t == '?':
+											self.ready = v
 											self.rdyresp.set()
 										elif t == 'i': #interrupt
 											if ((self.cpu.registers["Interrupt"].read() &  0x7000) >> 8) == self.iogroup:
 												self.cpu.fire_priority_interrupt(self.iogroup, v)
 
 
-								if self.wq.qsize():
-									try:
-										(t,v) = self.wq.get()
+								if self.devq.qsize():
+#									try:
+										(t,v) = self.devq.get()
 										self.send_packet((t,v))
-									except:
-										self.connected = False
-										self.devsock.close()
+#									except:
+#										self.connected = False
+#										self.devsock.close()
 
 		self.connected = False
 
@@ -145,7 +150,7 @@ class ExternalUnit():
 	def _wait_on_event(self,event):
 		if self.connected:
 			self.cpu.latch["iowait"] = True
-			while not event.isSet():
+			while not event.isSet(): #probably where i need to clear the wait
 				event.wait(.1)  #this value ay need tweaking
 				if not event.isSet(): #a bit more forgiving on timing if it happens on the first timeout
 					self.cpu._increment_cycle_count(self.iodelay)
@@ -155,45 +160,41 @@ class ExternalUnit():
 			return False
 
 	def unit_command(self,command):
-		self.cpu.IOwait_flag = True
-		self.wq.put(("c",command))
+		self.devq.put(("c",command))
+		self.ceuresp.clear()
 		self._wait_on_event(self.ceuresp)
-		if (unit.ceu & 0x8000) and (self.btc == True):
+		if (self.ceu & 0x8000) and (self.btc == True):
 			self.btc_cwa = self.cpu.ram[0o1060 + (self.btc * 2)].read()
 			self.cpu.cpu_increment_cycle_count()
 			self.btc_wc = self.cpu.ram[0o1060 + (self.btc * 2) + 1].read()
 			self.cpu.cpu_increment_cycle_count()
-		self.cpu.IOwait_flag = False
 		return self.ceu
 						
 	def unit_test(self,command):
-		self.cpu.IOwait_flag = True
-		self.wq.put(("t",command))
+		self.devq.put(("t",command))
+		self.teuresp.clear()
 		self._wait_on_event(self.teuresp)
-		self.cpu.IOwait_flag = False
 		return self.teu
 
 	def unit_write(self,data):
-		self.cpu.IOwait_flag = True
-		self.wq.put(("w",data))
+		self.devq.put(("w",data))
+		self.wresp.clear()
 		self._wait_on_event(self.wresp)
-		self.cpu.IOwait_flag = False
+		return self.w
 
 	def unit_ready(self,qry):
-		self.cpu.IOwait_flag = True
-		self.wq.put(("?",qry))
+		self.devq.put(("?",qry))
+		self.rdyresp.clear()
 		self.rdyresp.wait(.1)  #this value ay need tweaking
-		if not self._wait_on_event(self.rdyresp): #if we're not connected, we're not ready but we should wait to se if the device has a character either
+		if not self.rdyresp.isSet(): #if we're not connected, we're not ready but we should wait to se if the device has a character either
 			self.ready = False
-		self.cpu.IOwait_flag = False
 		return self.ready
 
 	def unit_read(self, wait=False):
-		self.cpu.IOwait_flag = True
-		self.wq.put(("r",True))
+		self.rresp.clear()
+		self.devq.put(("r",True))
 		self._wait_on_event(self.rresp)
-		self.cpu.IOwait_flag = False
-		return self.w
+		return self.r
 				
 	def _teardown(self):
 		print("%s external unit shutting down" % self.name)
@@ -212,6 +213,7 @@ class ExternalUnitHandler():
 		self.chardev = chardev
 		self.thread = threading.Thread(target=self.socket_handler, args=(0,))
 		self.rq = queue.Queue()
+		self.devq = queue.Queue()
 		self.wq = queue.Queue()
 		self.ceu = 0
 #		self.ceuevents = {} #drivers must overide this
@@ -222,9 +224,9 @@ class ExternalUnitHandler():
 		pollerObject.register(self.sock, select.POLLIN | select.POLLERR | select.POLLHUP)
 
 		while(self.connected):
-			if self.wq.qsize():
-				(t,v) = self.wq.get()
-				self.send_packet((t,v))
+			if self.devq.qsize():
+				self.send_packet(self.devq.get())
+				
 			fdVsEvent = pollerObject.poll(10)
 
 			for descriptor, Event in fdVsEvent:
@@ -265,7 +267,7 @@ class ExternalUnitHandler():
 	def event(self,event):
 		if (self.ceu & INTERRUPT_CONNECT) and (event,interrupable,level) in self.ceuevents:
 			if (self.ceu & selc.ceuevents[event]) and  interrupable:
-				self.wq.put(("i", level))
+				self.devq.put(("i", level))
 
 	def update_ceu(self,ceu):
 		'''left to the driver to handle'''
@@ -278,47 +280,55 @@ class ExternalUnitHandler():
 	def handle_configure(self, val):
 		self.ceu = val
 		self.update_ceu(self.ceu)
-		self.wq.put(("c",self.ceu))
+		self.devq.put(("c",self.ceu))
 
 	def handle_test(self, val):
 		ret = True
 		if self.update_teu(val) == True:
-			self.wq.put(("t",True))
+			self.devq.put(("t",True))
 		else:
-			self.wq.put(("t",False))
+			self.devq.put(("t",False))
 
 	
 #----- these are from the emulators perspective
 	def handle_write(self, val):
 		self.rq.put(val)
-		self.wq.put(("w", True))
+		self.devq.put(("w", True))
 
 	def handle_read(self, val):
-		self.wq.put(("r",self.rq.get()))
+		self.devq.put(("r",self.wq.get()))
 
 	def handle_ready(self, val):
 		if val == "r":
-			self.wq.put(("?",self.rq.qsize() > 0))
+			self.devq.put(("?",self.wq.qsize() > 0))
+
 		elif val in  ["w","c","t"]:
 			if self.connected:
-				self.wq.put(("?",True))
+				self.devq.put(("?",True))
 			else:
-				self.wq.put(("?",False))
-				
+				self.devq.put(("?",False))
+		self.devq.put(("?",True)) #catch all
+		
 #----these are from the client perspective
 	def write(self,d):
-		self.wq.put(("w", d))
+		self.wq.put(d)
 		
 	def read(self,plen=1):
 		if self.chardev:
 			t = self.rq.get()
 			return ((t &  0xff00) >> 8)
 		else:
-			return self.rq.get()
+			return t
+
+	def pollwrite(self):
+		if self.wq.qsize():
+			return self.wq.qsize()
+		else:
+			return False
 
 	def pollread(self):
 		if self.rq.qsize():
-			return True
+			return self.rq.qsize()
 		else:
 			return False
 

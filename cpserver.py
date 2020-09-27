@@ -45,6 +45,8 @@ class ControlPanelDriver():
 		print("started Control panel server on %s" % (self.devnode))
 		spollerrObject = select.poll()
 		conn = None
+		last_state = {}
+		last_time = 0
 		while(self.cpu._shutdown == False):
 			spollerrObject.register(self.sock, select.POLLIN | select.POLLERR | select.POLLHUP)
 			sfdVsEvent = spollerrObject.poll(250)
@@ -52,10 +54,11 @@ class ControlPanelDriver():
 				sdescriptor, sEvent = sfdVsEvent[0]
 				if sEvent & select.POLLIN:
 					conn, addr = self.sock.accept()
+					last_state = {}
 					pollerrObject = select.poll()
 					while( self.cpu._shutdown == False):
 						pollerrObject.register(conn, select.POLLIN | select.POLLERR | select.POLLHUP)
-						fdVsEvent = pollerrObject.poll(250) #this is basically our refresh rate
+						fdVsEvent = pollerrObject.poll(64) #this is basically our refresh rate
 						for descriptor, Event in fdVsEvent:
 							if Event & (select.POLLERR | select.POLLHUP):
 #								print("socket closed")
@@ -69,11 +72,16 @@ class ControlPanelDriver():
 								except:
 									conn.close()
 									break
-						try:
-							self.send_packet(conn,self.cpu.get_cpu_state())
-						except:
-							conn.close()
-							break
+#						try:
+						state = self.cpu.get_cpu_state()
+						if state != last_state or (last_time + 1) < time.time():
+							self.send_packet(conn,state)
+							last_time = time.time()
+
+						last_state = state
+#						except:
+#							conn.close()
+#							break
 		self.sock.close()
 		if conn is not None:
 			conn.close()
