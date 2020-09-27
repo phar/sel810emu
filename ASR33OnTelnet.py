@@ -55,7 +55,7 @@ class ASR33OnTelnetDriver():
 					e.event("on")
 					while(e.connected and self.cpu._shutdown == False and connected==True):
 						pollerrObject.register(conn, select.POLLIN | select.POLLERR | select.POLLHUP)
-						fdVsEvent = pollerrObject.poll(1000)
+						fdVsEvent = pollerrObject.poll(10)
 						if e.pollread():
 							e.event("out")
 							conn.send(struct.pack("B",(e.read() ^ 0x80)))
