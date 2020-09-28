@@ -13,14 +13,14 @@ from cpuprimitives import *
 #
 #TODO
 #  interrupts
-# 
+#
 # join threads on exit
 # badopcode on invalid instructions
 # 60hz interrupt
-#
-#
-#
-#
+# disassembler do sane things for invalid opcodes
+# invalid opcode execution behavior
+# simulator doesnt exit cleanly due to hanging thread
+# controlpanel client doesnt exit cleanly due to hanging thread
 #
 #
 
@@ -71,13 +71,13 @@ class SEL810CPU():
 }
 		
 		self.registers = {
-			"Program Counter":REGISTER_CELL(width=15),
-			"A Register":REGISTER_CELL(),
-			"B Register":REGISTER_CELL(),
+			"Program Counter":REGISTER_CELL(width=15,pwm=True),
+			"A Register":REGISTER_CELL(pwm=True),
+			"B Register":REGISTER_CELL(pwm=True),
 			"Control Switches":REGISTER_CELL(),
-			"Instruction":REGISTER_CELL(),
+			"Instruction":REGISTER_CELL(pwm=True),
 			"Interrupt Register":REGISTER_CELL(),
-			"Transfer Register":REGISTER_CELL()}
+			"Transfer Register":REGISTER_CELL(pwm=True)}
 
 
 		self.latch = {	"halt":True,#start halted
@@ -207,7 +207,7 @@ class SEL810CPU():
 			else:
 				base = base + self.registers["B Register"].read()
 				
-		elif not map: # Whenever the MAP and index bits of an instruction are set to logical zero, the contents of the VBR are treated as the most significant bits of, and appended to, the nine-bit operand address.
+		elif not map and self.hwoptions & SEL_OPTION_VBR: # Whenever the MAP and index bits of an instruction are set to logical zero, the contents of the VBR are treated as the most significant bits of, and appended to, the nine-bit operand address.
 			base = base | self.registers["VBR Register"].read() << 9
 
 		if indir:
@@ -396,12 +396,12 @@ class SEL810CPU():
 						eu = self.external_units[op.fields["unit"]]
 
 					if eu.unit_ready("r") or op.fields["wait"]:
-						self._increment_cycle_count(1)
-						self._increment_cycle_count(1)
+						self._increment_cycle_count()
 						self.ram[self._resolve_second_word_address(op.fields["m"])].write(eu.unit_read())
 						
 					else:
 						self._increment_pc() #skip
+					
 					self._increment_cycle_count(4)
 					self._increment_pc()
 
@@ -420,7 +420,7 @@ class SEL810CPU():
 						else: #immediate
 							eu.unit_write(self.ram[self._next_pc()].read())
 
-						self._increment_cycle_count(1)
+						self._increment_cycle_count()
 					else:
 						self._increment_pc() #skip
 					self._increment_cycle_count(4)
@@ -684,10 +684,11 @@ class SEL810CPU():
 					self._increment_cycle_count(2)
 					self._increment_pc()
 
-				elif op.nmemonic == "IXS":
-					if self.registers["Index Register"].read_signed() + 1 > 0x7fff:
+				elif op.nmemonic == "IXS": #fixme hidden featuress
+					n = (self.registers["Instruction"].read() & 0x03c0) >> 6
+					if (self.registers["Index Register"].read_signed() + n) > 0:
 						self._increment_pc()
-					self.registers["Index Register"].write_signed(self.registers["Index Register"].read_signed() + 1)
+					self.registers["Index Register"].write_signed(self.registers["Index Register"].read_signed() + n)
 					self._increment_cycle_count(1)
 					self._increment_pc()
 
@@ -702,11 +703,11 @@ class SEL810CPU():
 					self._increment_pc()
 
 				elif op.nmemonic == "PID":
-					self.registers["Interrupt"].write(self.registers["Interrupt"].read()   ^  self.ram[self._next_pc()].read())
+					self.registers["Interrupt"].write(self.registers["Interrupt"].read() ^ self.ram[self._next_pc()].read())
 					self._increment_pc(2)
 					
 				elif op.nmemonic == "PIE":
-					self.registers["Interrupt"].write( self.registers["Interrupt"].read()   |     self.ram[self._next_pc()].read())
+					self.registers["Interrupt"].write( self.registers["Interrupt"].read() | self.ram[self._next_pc()].read())
 					self._increment_pc(2)
 					
 				else: #badopcode However, execution of any legal instruction in an unprotected area causes the protect latch tobe turned OFF.
@@ -722,9 +723,14 @@ class SEL810CPU():
 		state_struct = {}
 		for n,v in self.registers.items():
 			state_struct[n] = v.read()
+			if self.registers[n].pwm:
+				state_struct["%s_pwm" % n] = v.get_PWM_vals()
+				v.pwmclear()
+			
 		for n,v in self.latch.items():
 			state_struct[n] = v
-			
+
+
 		state_struct["assembler"] = SELOPCODE(opcode=self.ram[self.registers["Program Counter"].read()].read_signed()).pack_asm()[0].strip()
 		state_struct["sim_ticks"] = self.sim_ticks
 
@@ -813,8 +819,8 @@ def parse_inputint(val):
 def control_panel_backend(cpu):
 	stepctr = 0
 	cpu.latch["cold_boot"] = True
-	
-	while cpu._shutdown == False:
+	running = True
+	while cpu._shutdown == False and running:
 
 		if cpu.cpcmdqueue.qsize():
 			(c, data) = cpu.cpcmdqueue.get()
@@ -863,7 +869,7 @@ def control_panel_backend(cpu):
 		else:
 			cpu.sim_ticks += 1
 			time.sleep(.1)
-			
+	print("exited")
 				
 				
 EXIT_FLAG = False
@@ -877,7 +883,7 @@ class SEL810Shell(cmd.Cmd):
 	prompt = '(SEL810x) '
 	file = None
 	cpu = SEL810CPU(SEL_OPTION_PROTECT_AND_TRAP_MEM | SEL_OPTION_VBR | SEL_OPTION_HW_INDEX | SEL_OPTION_STALL_ALARM | SEL_OPTION_AUTO_START | SEL_OPTION_IO_PARITY | SEL_OPTION_60HZ_RTC
-)
+,corememfile=CORE_MEMORY_FILE)
 	
 	exit_flag = False
 	histfile = os.path.expanduser('~/.sel810_console_history')
@@ -1027,6 +1033,6 @@ if __name__ == '__main__':
 	cp.start()
 	telnet.start()
 	shell.cmdloop()
-
 	telnet.stop()
 	cp.stop()
+

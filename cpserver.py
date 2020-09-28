@@ -6,7 +6,7 @@ import socket
 import struct
 import json
 import os
-
+from defs import * 
 #class dummy_cpu():
 #	def __init__(self):
 #		self.cpcmdqueue = queue.Queue()
@@ -58,7 +58,7 @@ class ControlPanelDriver():
 					pollerrObject = select.poll()
 					while(self.cpu._shutdown == False):
 						pollerrObject.register(conn, select.POLLIN | select.POLLERR | select.POLLHUP)
-						fdVsEvent = pollerrObject.poll(64) #this is basically our refresh rate
+						fdVsEvent = pollerrObject.poll(IDLE_UPDATE_MILLISECONDS) #this is basically our refresh rate
 						for descriptor, Event in fdVsEvent:
 							if Event & (select.POLLERR | select.POLLHUP):
 #								print("socket closed")

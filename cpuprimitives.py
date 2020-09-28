@@ -2,11 +2,32 @@ from defs import *
 from util import *
 
 class REGISTER_CELL():
-	def __init__(self,parent_array=None, width=16):
+	def __init__(self,parent_array=None, width=16, pwm=False):
 		self.value = 0
 		self.bitwidth = width
 		self.parent = parent_array
+		self.pwm = pwm
+		self.pwmclear()
 
+	def __pwmupdate(self):
+		self.pwmops += 1
+		for i in range(self.bitwidth):
+			if (1 << i) & self.value:
+				self.pwmvals[(self.bitwidth - 1) - i] = (self.pwmvals[(self.bitwidth - 1) - i] + 1.0)
+			
+	def pwmclear(self):
+		self.pwmops = 0
+		self.pwmvals = [0.0] * self.bitwidth
+	
+	
+	def get_PWM_vals(self):
+		if self.pwmops == 0:
+			self.__pwmupdate()
+		lst = []
+		for i in range(self.bitwidth):
+			lst.append(self.pwmvals[i] / self.pwmops)
+		return lst
+		
 	def read_signed(self):
 		return twoscmplment2dec(self.value)
 
@@ -16,10 +37,15 @@ class REGISTER_CELL():
 	def write(self,v):
 		self.value = v & ((2**self.bitwidth) - 1)
 		self.parity = parity_calc(self.value)
+		if self.pwm:
+			self.__pwmupdate()
 
 	def write_signed(self,v):
 		self.value = dec2twoscmplment(v & ((2**self.bitwidth) - 1),self.bitwidth)
 		self.parity = parity_calc(self.value)
+		if self.pwm:
+			self.__pwmupdate()
+
 
 class RAM_CELL(REGISTER_CELL):
 	def __init__(self,parent_array, addr, prot,  width=16):
