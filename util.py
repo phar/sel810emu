@@ -11,16 +11,16 @@ def fman(f):
     return f/10**fexp(f)
     
 
-def dec2twoscmplment(val):
+
+def dec2twoscmplment(val, bits=16):
 	if val < 0:
-	#	val = ((~abs(v) + 1)  & 0xffff)#its a 16 bit value so to fix the sign bit
-		val = val + 2**16
+		val = val + 2**bits
 	return val
 
 
-def twoscmplment2dec(val):
-	if val & 0x8000:
-		val = val - (2**16)
+def twoscmplment2dec(val,bits=16):
+	if val & (1<<(bits-1)):
+		val = val - (2**bits)
 	return val
 	
 

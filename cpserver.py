@@ -56,7 +56,7 @@ class ControlPanelDriver():
 					conn, addr = self.sock.accept()
 					last_state = {}
 					pollerrObject = select.poll()
-					while( self.cpu._shutdown == False):
+					while(self.cpu._shutdown == False):
 						pollerrObject.register(conn, select.POLLIN | select.POLLERR | select.POLLHUP)
 						fdVsEvent = pollerrObject.poll(64) #this is basically our refresh rate
 						for descriptor, Event in fdVsEvent:

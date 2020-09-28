@@ -150,7 +150,7 @@ class ExternalUnit():
 	def _wait_on_event(self,event):
 		if self.connected:
 			self.cpu.latch["iowait"] = True
-			while not event.isSet(): #probably where i need to clear the wait
+			while not event.isSet() and self.cpu.latch["io_hold_release"] == False: #probably where i need to clear the wait
 				event.wait(.1)  #this value ay need tweaking
 				if not event.isSet(): #a bit more forgiving on timing if it happens on the first timeout
 					self.cpu._increment_cycle_count(self.iodelay)
@@ -321,7 +321,7 @@ class ExternalUnitHandler():
 			return t
 
 	def pollwrite(self):
-		if self.wq.qsize():
+		if self.wq.qsize(): 
 			return self.wq.qsize()
 		else:
 			return False

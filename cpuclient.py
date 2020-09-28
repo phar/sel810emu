@@ -9,7 +9,7 @@ import json
 
 class ControlPanelClient():
 	def __init__(self,devicenode,updatecb):
-		self._shutdown = False
+		self.running = True
 		self.devicenode = devicenode
 		self.sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
 		self.sock.connect(self.devicenode)
@@ -20,29 +20,22 @@ class ControlPanelClient():
 		self.thread.start()
 
 	def stop(self):
-		self.thread.join()
+		self.running = False
+#		self.thread.join()
 		
 	def packet_hub(self,sock):
 		pollerObject = select.poll()
 		pollerObject.register(sock, select.POLLIN | select.POLLERR | select.POLLHUP)
 				
-		while self._shutdown == False:
-#			try:
-				fdVsEvent = pollerObject.poll(250)
-				for descriptor, Event in fdVsEvent:
-					if Event & select.POLLIN:
-						a = self.recv_packet(sock)
-						self.updatecb(a)
-					
-					if Event & (select.POLLERR | select.POLLHUP):
-						self._shutdown = True
-						print("here")
-				print("dfs",self._shutdown)
-		print("here2")
+		while self.running == True:
+			fdVsEvent = pollerObject.poll(250)
+			for descriptor, Event in fdVsEvent:
+				if Event & (select.POLLERR | select.POLLHUP):
+					self.running = False
 
-#			except:
-#				print("here")
-#				self._shutdown = True
+				if Event & select.POLLIN:
+					a = self.recv_packet(sock)
+					self.updatecb(a)
 			
 	def send_packet(self,sock,packet):
 		try:
@@ -51,7 +44,7 @@ class ControlPanelClient():
 			sock.send(pp)
 		except:
 			print("somehting went wrong with the emulator connection")
-			self._shutdown = True
+			self.running = False
 			
 	def recv_packet(self,sock):
 		try:
@@ -65,12 +58,8 @@ class ControlPanelClient():
 			return json.loads(buff)
 		except:
 			print("somehting went wrong with the emulator connection")
-			self._shutdown = True
+			self.running = False
 			
-	def shutdown(self):
-		self._shutdown = True
-		self.thread.join()
-
 	def step(self):
 		self.send_packet(self.sock,("s",1))
 
@@ -88,18 +77,16 @@ class ControlPanelClient():
 		
 
 if __name__ == '__main__':
-
-
 	def showuypdate(arg):
-#		print(arg)
+		print(arg)
 		pass
 
 	a = ControlPanelClient("/tmp/SEL810_control_panel",showuypdate)
 	a.start()
 
-	while(a._shutdown == False):
+	while(a.running == True):
 		time.sleep(1)
-		print("dfpp",a._shutdown)
+		print("dfpp",a.running)
 #		a.step()
 	print("booos")
-	a.shutdown()
+	a.stop()
