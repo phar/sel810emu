@@ -95,6 +95,7 @@ class SEL810CPU():
 
 		if self.hwoptions & SEL_OPTION_PROTECT_AND_TRAP_MEM:
 			self.latch["protect"] = False
+			self.latch["mode_key"] = False
 			self.registers["Protection Register"] = REGISTER_CELL()
 
 		if self.hwoptions & SEL_OPTION_VBR:
@@ -144,6 +145,11 @@ class SEL810CPU():
 		elif 13 > shifts and shifts < 16:
 			self._increment_cycle_count(5)
 			
+			
+	def _priority_interrupt_notice(self):
+		#Any priority interrupt will turn ON the protect latch
+		if self.latch["mode_key"] = True:
+			self.latch["protect"] = True
 
 	def fire_protection_violation_interrupt(self):
 		pass #fixme i have no idea where this fires
@@ -159,13 +165,15 @@ class SEL810CPU():
 		self._SPB_indir_opcode(0o1001, True)
 
 	def fire_priority_interrupt(self,group,channel):
+		self._priority_interrupt_notice()
 		self._SPB_indir_opcode(0o1002 + (group * 12) + channel, True)
 		
 	def _SPB_indir_opcode(self,address): #fixme
-		#fixme
-		address = self.ram[address].read_signed()
+		#fixme is this wrong
+		#when the wired SPB instruction is executed, the status of the protect latch is stored in bit 0 of the effective address defined to store the program counter contents.
 
-		self.ram[address].write_signed(self._next_pc())
+		address = self.ram[address].read()
+		self.ram[address].writed(self._next_pc())
 		self.registers["Program Counter"].write(address)
 		self._increment_cycle_count(2)
 		self._increment_pc()
@@ -276,6 +284,7 @@ class SEL810CPU():
 					self._increment_pc()
 								
 				elif op.nmemonic == "BRU":
+					#fixme When the TOI and BRU indirect (or LOB) instructions are executed following the interrupt subroutine, the protect latch is returned to the status present a t the time the interrupt occurred.
 					self.registers["Program Counter"].write(address)
 					self._increment_cycle_count(2)
 					
@@ -617,11 +626,13 @@ class SEL810CPU():
 					self._increment_cycle_count(1)
 					self._increment_pc()
 					
-				elif op.nmemonic == "TOI": #fixme
+				elif op.nmemonic == "TOI": #fixme"
+					#fixme When the TOI and BRU indirect (or LOB) instructions are executed following the interrupt subroutine, the protect latch is returned to the status present a t the time the interrupt occurred.
 					self._increment_cycle_count(1)
 					self._increment_pc()
 
 				elif op.nmemonic == "LOB":
+					#fixme When the TOI and BRU indirect (or LOB) instructions are executed following the interrupt subroutine, the protect latch is returned to the status present a t the time the interrupt occurred.
 					self.registers["Program Counter"].write(self.ram[self._next_pc()].read())
 					self._increment_cycle_count(2)
 					self._increment_pc(2)
@@ -631,8 +642,8 @@ class SEL810CPU():
 					self._increment_cycle_count(1)
 					self._increment_pc()
 
-				elif op.nmemonic == "STX":
-					if indir: #address
+				elif op.nmemonic == "STX": #
+					if op.fields["i"]: #address
 						self.ram[self._resolve_second_word_address(op.fields["m"])].write(self.registers["Index Register"])
 						self._increment_cycle_count()
 					else: #immediate
@@ -650,6 +661,16 @@ class SEL810CPU():
 					self._increment_cycle_count(1)
 					self._increment_pc()
 
+				elif op.nmemonic == "TPA": #lost instuction
+					self.registers["Protect Register"].write(self.registers["A Register"].read())
+					self._increment_cycle_count(1)
+					self._increment_pc()
+
+				elif op.nmemonic == "TAP": #lost instruction
+					self.registers["A Register"].write(self.registers["Protect Register"].read())
+					self._increment_cycle_count(1)
+					self._increment_pc()
+
 				elif op.nmemonic == "TBV":
 					self.registers["VBR Register"].write(self.registers["B Register"].read())
 					self._increment_cycle_count(1)
@@ -661,7 +682,7 @@ class SEL810CPU():
 					self._increment_pc()
 
 				elif op.nmemonic == "LIX":
-					if indir: #address
+					if op.fields["i"]: #address
 						self.registers["Index Register"].write(self.ram[self._resolve_second_word_address(op.fields["m"])].read())
 						self._increment_cycle_count()
 					else: #immediate

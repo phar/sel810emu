@@ -43,7 +43,7 @@ class ASR33OnTelnetDriver():
 		print("started ASR33 7-bit telnet driver on %s:%d" % (host,port))
 		spollerrObject = select.poll()
 		conn = None
-		while(self.cpu._shutdown == False):
+		while(e.connected == True):
 			spollerrObject.register(s, select.POLLIN)
 			sfdVsEvent = spollerrObject.poll(250)
 			if len(sfdVsEvent):
