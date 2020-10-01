@@ -494,7 +494,7 @@ class SEL810CPU():
 					
 				elif op.nmemonic == "RSA":
 					s  = self.registers["A Register"].read() & 0x8000
-					for i in op.fields["shifts"]:
+					for i in range(op.fields["shifts"]):
 						self.registers["A Register"].write(s | (self.registers["A Register"].read() >> 1))
 					self._shift_cycle_timing(op.fields["shifts"])
 					self._increment_pc()
