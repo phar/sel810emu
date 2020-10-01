@@ -509,7 +509,7 @@ class SEL810CPU():
 					s1  = self.registers["A Register"].read() & 0x8000
 					s2  = self.registers["B Register"].read() & 0x8000
 					r = ((self.registers["A Register"].read() & 0x7fff) << 15) | (self.registers["B Register"].read() & 0x7fff)
-					for i in op.fields["shifts"]:
+					for i in range(op.fields["shifts"]):
 						r = s1 | (r >> 1)
 					self.registers["A Register"].write(s1 | ((r >> 15) & 0x7fff))
 					self.registers["B Register"].write(s2 | (r & 0x7fff))
