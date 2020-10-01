@@ -302,7 +302,7 @@ class SEL810CPU():
 					self._increment_pc()
 
 				elif op.nmemonic == "IMS":
-					t = (self.ram[address]["read"]() + 1) & 0xffff
+					t = (self.ram[address].read_signed() + 1) & 0xffff
 					self.ram[address].write_signed(t)
 					if t == 0:
 						self._increment_pc()
@@ -448,7 +448,7 @@ class SEL810CPU():
 
 				elif op.nmemonic == "RNA":
 					if self.registers["B Register"].read() & 0x4000:
-						if (self.registers["A Register"].raw_read() + 1) > 0x7fff:
+						if (self.registers["A Register"].read_signed() + 1) > 0x7fff:
 							self.latch["overflow"] = True
 						self.registers["A Register"].write_signed(self.registers["A Register"].read_signed() + 1)
 					self._increment_cycle_count(1)
@@ -488,7 +488,7 @@ class SEL810CPU():
 						self.latch["carry"]  = True
 					else:
 						self.latch["carry"]  = False
-					self.registers["B Register"].write_signed(self.registers["A Register"].raw_read() & 0x7fff)
+					self.registers["B Register"].write_signed(self.registers["A Register"].read_signed() & 0x7fff)
 					self._increment_pc()
 					self._increment_cycle_count()
 					
