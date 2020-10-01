@@ -211,13 +211,18 @@ class ExternalUnitHandler():
 		self.sock.connect(self.devicenode)
 		self.connected = True
 		self.chardev = chardev
-		self.thread = threading.Thread(target=self.socket_handler, args=(0,))
 		self.rq = queue.Queue()
 		self.devq = queue.Queue()
 		self.wq = queue.Queue()
 		self.ceu = 0
-#		self.ceuevents = {} #drivers must overide this
+
+	def start(self):
+		self.thread = threading.Thread(target=self.socket_handler, args=(0,))
 		self.thread.start()
+
+	def stop(self):
+		self.connected = False
+		self.thread.join()
 
 	def socket_handler(self,arg):
 		pollerObject = select.poll()
@@ -230,6 +235,12 @@ class ExternalUnitHandler():
 			fdVsEvent = pollerObject.poll(10)
 
 			for descriptor, Event in fdVsEvent:
+				if Event & (select.POLLERR | select.POLLHUP):
+					print("the emulator connection failed (socket)")
+					self.connected = False
+					self.sock.close()
+					break
+
 				if Event & select.POLLIN:
 					(t,v) = self.recv_packet()
 					if t == "c":
@@ -243,11 +254,6 @@ class ExternalUnitHandler():
 					elif t == "?":
 						self.handle_ready(v)
 						
-				if Event & (select.POLLERR | select.POLLHUP):
-					print("the emulator connection failed (socket)")
-					self.connected = False
-					self.sock.close()
-					break
 							
 	def send_packet(self,packet):
 		pp = json.dumps(packet).encode("utf-8")

@@ -387,20 +387,21 @@ class SELOPCODE(dict):
 		else:
 			self.nmemonic = self._get_nmemonic(peekdict["opcode"])
 
-		try:
-			self.field_spec =  DECOMPOSE_BIN_STYLE[SEL810_OPCODES[self.nmemonic][1]]
-			self.set_nmemonic(self.nmemonic)
-		except:
-			print("FAIL",self.nmemonic,peekdict["opcode"])
-	
-	
-		self.fields = self._populate_fields_from_spec(self.field_spec)
-		for n,v in DECOMPOSE_BIN_STYLE[SEL810_OPCODES[self.nmemonic][0]].items():
-			if n in ["operand"]:
-				self.fields[n] = twoscmplment2dec(int(bits[v[0]:v[1]],2),  v[1] - v[0])
-			else:
-				self.fields[n] = int(bits[v[0]:v[1]],2)
-		self.ispseudo_opcode = False
+		if self.nmemonic != None:
+			try:
+				self.field_spec =  DECOMPOSE_BIN_STYLE[SEL810_OPCODES[self.nmemonic][1]]
+				self.set_nmemonic(self.nmemonic)
+			except:
+				print("FAIL",self.nmemonic,peekdict["opcode"])
+		
+		
+			self.fields = self._populate_fields_from_spec(self.field_spec)
+			for n,v in DECOMPOSE_BIN_STYLE[SEL810_OPCODES[self.nmemonic][0]].items():
+				if n in ["operand"]:
+					self.fields[n] = twoscmplment2dec(int(bits[v[0]:v[1]],2),  v[1] - v[0])
+				else:
+					self.fields[n] = int(bits[v[0]:v[1]],2)
+			self.ispseudo_opcode = False
 
 	def set_nmemonic(self,nmemonic):
 		self.nmemonic = nmemonic
@@ -719,110 +720,112 @@ class SELOPCODE(dict):
 				
 				
 	def pack_asm(self,curr_addr=0,symbols={}):
-		l = "     "
-		if self.label:
-			if curr_addr == symbols[self.label]:
-				l = self.label.ljust(5)
-			else:
-				if self.label:
-					l = "*" + self.label + "   %d" % curr_addr + "   %d" %  symbols[self.label]
-				
-		args = []
-		if not self.ispseudo_opcode:
-			indir = " "
-			if self.nmemonic not in ["PID","PIE"]:
-				for field in ["operand","address","unit"]:
-					if field in self.fields:
-						if self.operand_is_constant:
-							args.append("='%o" % self._resolve_to_value(self.fields[field] ,curr_addr,symbols)) #fixme, could be a flat value
-						else:
-							args.append("'%o" % self._resolve_to_value(self.fields[field] ,curr_addr,symbols))
-							
-				if "i" in self.fields and self.fields["i"]:
-						indir = "*"
-				if "wait" in self.fields and  self.fields["wait"]:
-						args.append("W")
-				if "r" in self.fields and self.fields["r"]:
-						args.append("R")
-				if "x" in self.fields and self.fields["x"]:
-						args.append("1")
-				if "shifts" in self.fields:
-					if self.fields["shifts"]:
-						args.append("%d" % self._resolve_to_value( self.fields["shifts"],curr_addr,symbols))
-
-			str = "%s%s%s %s" % (l,self.nmemonic,indir, ",".join(args))
-			if self.comment:
-				str += (" " * (self.comment_space - len(str)))
-				str += "*" + self.comment
-		else:
-			if self.nmemonic == "DATA":
-				lines = []
-				if not self.operand_is_constant:
-					if self.data:
-						for d in  self.data:
-							args = []
-							dd =  self._resolve_to_value(d,curr_addr,symbols)
-							args.append("'%o" % dd)
-							str = ""
-							if not len(lines):
-								str += "%s" % l.ljust(5)
-							else:
-								str += "     "
-							str += "%s  %s" % (self.nmemonic, ",".join(args))
-
-							if self.comment and not len(lines):
-								str += (" " * (self.comment_space - len(str)))
-								str += "*" + self.comment
-							else:
-								pass
-							lines.append(str)
-						return(lines)
-						
-			elif self.nmemonic == "***":
+		if self.nmemonic != None:
+			l = "     "
+			if self.label:
+				if curr_addr == symbols[self.label]:
+					l = self.label.ljust(5)
+				else:
+					if self.label:
+						l = "*" + self.label + "   %d" % curr_addr + "   %d" %  symbols[self.label]
+					
+			args = []
+			if not self.ispseudo_opcode:
 				indir = " "
-				if "i" in self.fields:
-					if self.fields["i"]:
-						indir = "*"
-				str = "%s%s%s  %s" % (l,self.nmemonic,indir, ",".join(args))
-			elif self.nmemonic == "ORG":
-				args.append("'%o" % self._resolve_to_value(self.fields["address"],curr_addr,symbols))
-				str = "%s%s  %s" % (l,self.nmemonic, ",".join(args))
-			elif self.nmemonic == "DAC":
-				args.append("'%o" % self._resolve_to_value(self.fields["operand"],curr_addr,symbols))
-				if "x" in self.fields and self.fields["x"]:
-						args.append("1")
-				str = "%s%s  %s" % (l,self.nmemonic, ",".join(args))
-			elif self.nmemonic == "EAC":
-				args.append("'%o" % self._resolve_to_value(self.fields["operand"],curr_addr,symbols))
-				if "x" in self.fields and self.fields["x"]:
-						args.append("1")
-				str = "%s%s  %s" % (l,self.nmemonic, ",".join(args))
-			elif self.nmemonic == "END":
-				str = "%s%s  %s" % (l,self.nmemonic, ",".join(args))
+				if self.nmemonic not in ["PID","PIE"]:
+					for field in ["operand","address","unit"]:
+						if field in self.fields:
+							if self.operand_is_constant:
+								args.append("='%o" % self._resolve_to_value(self.fields[field] ,curr_addr,symbols)) #fixme, could be a flat value
+							else:
+								args.append("'%o" % self._resolve_to_value(self.fields[field] ,curr_addr,symbols))
+								
+					if "i" in self.fields and self.fields["i"]:
+							indir = "*"
+					if "wait" in self.fields and  self.fields["wait"]:
+							args.append("W")
+					if "r" in self.fields and self.fields["r"]:
+							args.append("R")
+					if "x" in self.fields and self.fields["x"]:
+							args.append("1")
+					if "shifts" in self.fields:
+						if self.fields["shifts"]:
+							args.append("%d" % self._resolve_to_value( self.fields["shifts"],curr_addr,symbols))
 
-			elif self.nmemonic == "BSS":
-				lines = []
-				for d in self.data:
-					str = ""
-					args = []
-					if  not len(lines):
-						str += "%s" % l.ljust(5)
-					else:
-						str += "     "
-					args.append("'%o" % 0)
-					str += "DATA  %s" % (",".join(args))
-					lines.append(str)
-				return lines
-
-			elif self.nmemonic == "BES":
-				str = "%s%s  %s" % (l,self.nmemonic, ",".join(args))
+				str = "%s%s%s %s" % (l,self.nmemonic,indir, ",".join(args))
+				if self.comment:
+					str += (" " * (self.comment_space - len(str)))
+					str += "*" + self.comment
 			else:
-				str = "******!!************something bad happened" + self.nmemonic
+				if self.nmemonic == "DATA":
+					lines = []
+					if not self.operand_is_constant:
+						if self.data:
+							for d in  self.data:
+								args = []
+								dd =  self._resolve_to_value(d,curr_addr,symbols)
+								args.append("'%o" % dd)
+								str = ""
+								if not len(lines):
+									str += "%s" % l.ljust(5)
+								else:
+									str += "     "
+								str += "%s  %s" % (self.nmemonic, ",".join(args))
 
-			if self.comment:
-				str += (" " * (self.comment_space - len(str)))
-				str += "*" + self.comment
+								if self.comment and not len(lines):
+									str += (" " * (self.comment_space - len(str)))
+									str += "*" + self.comment
+								else:
+									pass
+								lines.append(str)
+							return(lines)
+							
+				elif self.nmemonic == "***":
+					indir = " "
+					if "i" in self.fields:
+						if self.fields["i"]:
+							indir = "*"
+					str = "%s%s%s  %s" % (l,self.nmemonic,indir, ",".join(args))
+				elif self.nmemonic == "ORG":
+					args.append("'%o" % self._resolve_to_value(self.fields["address"],curr_addr,symbols))
+					str = "%s%s  %s" % (l,self.nmemonic, ",".join(args))
+				elif self.nmemonic == "DAC":
+					args.append("'%o" % self._resolve_to_value(self.fields["operand"],curr_addr,symbols))
+					if "x" in self.fields and self.fields["x"]:
+							args.append("1")
+					str = "%s%s  %s" % (l,self.nmemonic, ",".join(args))
+				elif self.nmemonic == "EAC":
+					args.append("'%o" % self._resolve_to_value(self.fields["operand"],curr_addr,symbols))
+					if "x" in self.fields and self.fields["x"]:
+							args.append("1")
+					str = "%s%s  %s" % (l,self.nmemonic, ",".join(args))
+				elif self.nmemonic == "END":
+					str = "%s%s  %s" % (l,self.nmemonic, ",".join(args))
 
+				elif self.nmemonic == "BSS":
+					lines = []
+					for d in self.data:
+						str = ""
+						args = []
+						if  not len(lines):
+							str += "%s" % l.ljust(5)
+						else:
+							str += "     "
+						args.append("'%o" % 0)
+						str += "DATA  %s" % (",".join(args))
+						lines.append(str)
+					return lines
+
+				elif self.nmemonic == "BES":
+					str = "%s%s  %s" % (l,self.nmemonic, ",".join(args))
+				else:
+					str = "******!!************something bad happened" + self.nmemonic
+
+				if self.comment:
+					str += (" " * (self.comment_space - len(str)))
+					str += "*" + self.comment
+		else:
+			str = "(bad opcode)"
 		return [str]
 		
 	def _get_nmemonic(self,testopcode, testaugmentcode=None):
@@ -1071,7 +1074,7 @@ if __name__ == '__main__':
 	asm.build_executable()
 	print(asm.symbols)
 	asm.write_symbols()
-
-	#op = SELOPCODE(opcode=0)
-	#print(op.pack_asm())
+#	for i in range(65535):
+#		op = SELOPCODE(opcode=i)
+#		print(op.pack_asm())
 

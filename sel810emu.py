@@ -6,21 +6,19 @@ import time
 import cmd
 import os
 import json
+import signal
 from SELDeviceDriver import *
 from ASR33OnTelnet import *
 from cpserver import *
 from cpuprimitives import *
+
 #
 #TODO
 #  interrupts
-#
-# join threads on exit
 # badopcode on invalid instructions
 # 60hz interrupt
 # disassembler do sane things for invalid opcodes
 # invalid opcode execution behavior
-# simulator doesnt exit cleanly due to hanging thread
-# controlpanel client doesnt exit cleanly due to hanging thread
 #
 #
 
@@ -93,10 +91,10 @@ class SEL810CPU():
 						"carry":False}
 
 
-		if self.hwoptions & SEL_OPTION_PROTECT_AND_TRAP_MEM:
+		if self.hwoptions & (SEL_OPTION_PROTECT_1B_AND_TRAP_MEM | SEL_OPTION_PROTECT_2B_AND_TRAP_MEM):
 			self.latch["protect"] = False
 			self.latch["mode_key"] = False
-			self.registers["Protection Register"] = REGISTER_CELL()
+			self.registers["Protect Register"] = REGISTER_CELL()
 
 		if self.hwoptions & SEL_OPTION_VBR:
 			self.registers["VBR Register"] = REGISTER_CELL(width=6)
@@ -148,10 +146,11 @@ class SEL810CPU():
 			
 	def _priority_interrupt_notice(self):
 		#Any priority interrupt will turn ON the protect latch
-		if self.latch["mode_key"] = True:
+		if self.latch["mode_key"] == True:
 			self.latch["protect"] = True
 
-	def fire_protection_violation_interrupt(self):
+	def fire_protection_violation_interrupt(self,protflag):
+		self._SPB_indir_opcode( + protflag, True)
 		pass #fixme i have no idea where this fires
 
 
@@ -171,9 +170,14 @@ class SEL810CPU():
 	def _SPB_indir_opcode(self,address): #fixme
 		#fixme is this wrong
 		#when the wired SPB instruction is executed, the status of the protect latch is stored in bit 0 of the effective address defined to store the program counter contents.
-
+        # Execution of this instruction is modified when caused by a priority interrupt in that the contents of the program counter are unchanged when transferred to the effective memory address. If the Program Protect and Instruction Trap option is included (and the Protect Mode switch is ON), when the SPB indirect instruction is caused by a priority interrupt' the status of the Protect Latch at the time of the interrupt is stored in bit 0 of the effective memory address.
 		address = self.ram[address].read()
-		self.ram[address].writed(self._next_pc())
+		
+		if self.hwoptions & (SEL_OPTION_PROTECT_1B_AND_TRAP_MEM | SEL_OPTION_PROTECT_2B_AND_TRAP_MEM):
+			#If the Program Protect and Instruction Trap option is included (and the computer is in the protected mode), the status of the Protect Latch is also stored in bit 0 of the interrupt routine entry point by the SPB instruction.
+			
+		
+		self.ram[address].write(self._next_pc())
 		self.registers["Program Counter"].write(address)
 		self._increment_cycle_count(2)
 		self._increment_pc()
@@ -285,6 +289,7 @@ class SEL810CPU():
 								
 				elif op.nmemonic == "BRU":
 					#fixme When the TOI and BRU indirect (or LOB) instructions are executed following the interrupt subroutine, the protect latch is returned to the status present a t the time the interrupt occurred.
+					#If the Program Protect and Instruction Trap option is in- cluded (and the Protect Mode switch is ON), when the BRU indirect instruction is executed following a TOI instruction to exit from a priority interrupt routine, bits 2 through 15 of the effective address replace the contents of program counter, and the Protect Latch is set to the state of bit "0" of the effec- tive address.
 					self.registers["Program Counter"].write(address)
 					self._increment_cycle_count(2)
 					
@@ -628,11 +633,13 @@ class SEL810CPU():
 					
 				elif op.nmemonic == "TOI": #fixme"
 					#fixme When the TOI and BRU indirect (or LOB) instructions are executed following the interrupt subroutine, the protect latch is returned to the status present a t the time the interrupt occurred.
+					#The TOI instruction inhibits servicing the interrupt for one instruction to allow the BRU* to be executed at the exit of the interrupt routines. This is to insure that the proper active latch (A) is reset.
 					self._increment_cycle_count(1)
 					self._increment_pc()
 
 				elif op.nmemonic == "LOB":
 					#fixme When the TOI and BRU indirect (or LOB) instructions are executed following the interrupt subroutine, the protect latch is returned to the status present a t the time the interrupt occurred.
+					#f the Program Pro- tect and Instruction Trap option is included (and the Protect Mode switch is ON), when the LOB instruction is used fol- lowing a TOI instruction to exit from a priority interrupt rou- tine, the Protect Latch is set to the state of bit "0" of the effective address.
 					self.registers["Program Counter"].write(self.ram[self._next_pc()].read())
 					self._increment_cycle_count(2)
 					self._increment_pc(2)
@@ -744,17 +751,12 @@ class SEL810CPU():
 		state_struct = {}
 		for n,v in self.registers.items():
 			state_struct[n] = v.read()
-			if self.registers[n].pwm:
-				state_struct["%s_pwm" % n] = v.get_PWM_vals()
-				v.pwmclear()
 			
 		for n,v in self.latch.items():
 			state_struct[n] = v
 
 
 		state_struct["assembler"] = SELOPCODE(opcode=self.ram[self.registers["Program Counter"].read()].read_signed()).pack_asm()[0].strip()
-		state_struct["sim_ticks"] = self.sim_ticks
-
 		return state_struct
 
 
@@ -890,25 +892,22 @@ def control_panel_backend(cpu):
 		else:
 			cpu.sim_ticks += 1
 			time.sleep(.1)
-	print("exited")
-				
-				
-EXIT_FLAG = False
-
-
-SEL_OPTION_PROTECT_AND_TRAP_MEM | SEL_OPTION_VBR | SEL_OPTION_HW_INDEX | SEL_OPTION_STALL_ALARM | SEL_OPTION_AUTO_START | SEL_OPTION_IO_PARITY | SEL_OPTION_60HZ_RTC
 
 
 class SEL810Shell(cmd.Cmd):
 	intro = 'Welcome to the SEL emulator/debugger. Type help or ? to list commands.\n'
 	prompt = '(SEL810x) '
-	file = None
-	cpu = SEL810CPU(SEL_OPTION_PROTECT_AND_TRAP_MEM | SEL_OPTION_VBR | SEL_OPTION_HW_INDEX | SEL_OPTION_STALL_ALARM | SEL_OPTION_AUTO_START | SEL_OPTION_IO_PARITY | SEL_OPTION_60HZ_RTC
-,corememfile=CORE_MEMORY_FILE)
-	
-	exit_flag = False
 	histfile = os.path.expanduser('~/.sel810_console_history')
 	histfile_size = 1000
+	
+	def __init__(self):
+		super().__init__()
+		self.file = None
+		self.cpu = SEL810CPU(SEL_OPTION_PROTECT_2B_AND_TRAP_MEM | SEL_OPTION_VBR | SEL_OPTION_HW_INDEX | SEL_OPTION_STALL_ALARM | SEL_OPTION_AUTO_START | SEL_OPTION_IO_PARITY | SEL_OPTION_60HZ_RTC
+	,corememfile=CORE_MEMORY_FILE)
+		self.exit_flag = False
+
+		signal.signal(signal.SIGINT, lambda x,y  : self.onecmd("quit\n"))
 
 	def do_step(self, arg):
 		'singlestep the processor'
@@ -954,9 +953,10 @@ class SEL810Shell(cmd.Cmd):
 
 	def do_quit(self,args):
 		'exit the emulator'
-		self.exit_flag = True
-		self.cpu.cpcmdqueue.put(("q",None))
-		self.cpu.shutdown()
+		if self.exit_flag == False:
+			self.exit_flag = True
+			self.cpu.cpcmdqueue.put(("q",None))
+			self.cpu.shutdown()
 		return True
 		
 	def do_hexdump(self,arg):
@@ -1049,7 +1049,7 @@ if __name__ == '__main__':
 
 	shell = SEL810Shell()
 	
-	telnet = ASR33OnTelnetDriver(shell.cpu, "/tmp/SEL810_asr33","127.0.0.1",9999)
+	telnet = ASR33OnTelnetDriver("/tmp/SEL810_asr33","127.0.0.1",9999)
 	cp  = ControlPanelDriver(shell.cpu,"/tmp/SEL810_control_panel")
 	cp.start()
 	telnet.start()

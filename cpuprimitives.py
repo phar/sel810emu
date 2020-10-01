@@ -48,7 +48,7 @@ class REGISTER_CELL():
 
 
 class RAM_CELL(REGISTER_CELL):
-	def __init__(self,parent_array, addr, prot,  width=16):
+	def __init__(self,parent_array, addr,  width=16):
 		self.prot = False
 		self.parity = False
 		self.addr = addr
@@ -67,20 +67,11 @@ class RAM_CELL(REGISTER_CELL):
 	
 
 class COREMEMORY(list):
-	def __init__(self, cpu, backing_file, memmax=0x7fff, options=OPTION_PROT_NONE):
-		self.optionsmask = options
+	def __init__(self, cpu, backing_file, memmax=0x7fff):
 		self.memmax = memmax
-		self.prot_reg = 0
-		self._ram = [] # [RAM_CELL()] * self.memmax
+		self._ram = []
 		self.cpu = cpu
 		self.backingfile = backing_file
-
-		if self.optionsmask & OPTION_PROT_1B: #its not clear how this option works for various memory sizes
-			psize = 1024
-		elif self.optionsmask & OPTION_PROT_2B:
-			psize = 2048
-		else:
-			psize = self.memmax
 
 		try:
 			binfile = loadProgramBin(self.backingfile)
@@ -88,14 +79,14 @@ class COREMEMORY(list):
 			binfile = [0] * MAX_MEM_SIZE
 
 		self.corememfile = open(self.backingfile,"wb")
-		for i in range(0, self.memmax, psize):
-			for e in range(0,psize):
-				cell = RAM_CELL(self,(i*psize) + e, i)
-				self._ram.append(cell)
-				if len(binfile) > (i*psize) + e:
-					cell.write(binfile[(i*psize) + e])
-				else:
-					cell.write(0)
+
+		for i in range(0, self.memmax:
+			cell = RAM_CELL(self,i)
+			self._ram.append(cell)
+			if len(binfile) > i:
+				cell.write(binfile[i])
+			else:
+				cell.write(0)
 					
 	def _flush_write(self,addr):
 		self.corememfile.seek(addr * struct.calcsize("H"))
@@ -106,9 +97,10 @@ class COREMEMORY(list):
 
 
 	def _write_attempt(self,prot_bit):
-		if self.cpu.hwoptions & SEL_OPTION_PROTECT_AND_TRAP_MEM:
-			if self.cpu.latch["protect"]: #fixme, needs to be anded with protection mask
-				self.cpu.fire_protection_violation_interrupt()
+		if self.cpu.hwoptions & (SEL_OPTION_PROTECT_1B_AND_TRAP_MEM | SEL_OPTION_PROTECT_2B_AND_TRAP_MEM):
+			if (self.cpu.registers["Protect Register"] & (1<<prot_bit)) > 0: #fixme, needs to be anded with protection mask
+				#If the Program Protect and Instruction Trap option is included (and the computer is in the protected mode), the status of the Protect Latch is also stored in bit 0 of the interrupt routine entry point by the SPB instruction. When the program returns to the point of interrupt, the protect latch returns to the status present at the time of the interrupt.
+				self.cpu.fire_protection_violation_interrupt((self.cpu.registers["Protect Register"] & (1<<prot_bit)) > 0)
 				return False
 		return True #will figure out the interrupt logic for this later
 		 
@@ -118,12 +110,6 @@ class COREMEMORY(list):
 	def __getitem__(self, key):
 		return self._ram[key & self.memmax]
 
-	def set_prot_reg(self, regval):
-		self.prot_reg = regval
-		
-	def get_prot_reg(self):
-		return self.prot_reg
-		
 	def shutdown(self):
 		self.corememfile.close()
 

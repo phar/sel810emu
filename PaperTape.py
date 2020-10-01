@@ -43,10 +43,12 @@ class PaperTapeDriver():
 
 
 	def start(self):
+		self.peripheral.start()
 		self.done = False
 		self.thread.start()
 
 	def stop(self):
+		self.peripheral.stop()
 		self.thread.join()
 		self.ifile.close()
 		self.ofile.close()

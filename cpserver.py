@@ -75,10 +75,18 @@ class ControlPanelDriver():
 #						try:
 						state = self.cpu.get_cpu_state()
 						if state != last_state or (last_time + 1) < time.time():
-							self.send_packet(conn,state)
 							last_time = time.time()
+							last_state = state.copy()
+							
+							state["sim_ticks"] = self.cpu.sim_ticks
+							for n,v in self.cpu.registers.items():
+								state[n] = v.read()
+								if self.cpu.registers[n].pwm:
+									state["%s_pwm" % n] = v.get_PWM_vals()
+									v.pwmclear()
 
-						last_state = state
+							self.send_packet(conn,state)
+
 #						except:
 #							conn.close()
 #							break

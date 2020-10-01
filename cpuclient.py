@@ -21,7 +21,7 @@ class ControlPanelClient():
 
 	def stop(self):
 		self.running = False
-#		self.thread.join()
+		self.thread.join()
 		
 	def packet_hub(self,sock):
 		pollerObject = select.poll()
@@ -32,11 +32,12 @@ class ControlPanelClient():
 			for descriptor, Event in fdVsEvent:
 				if Event & (select.POLLERR | select.POLLHUP):
 					self.running = False
+					break
 
 				if Event & select.POLLIN:
 					a = self.recv_packet(sock)
 					self.updatecb(a)
-			
+
 	def send_packet(self,sock,packet):
 		try:
 			pp = json.dumps(packet).encode("utf-8")
@@ -88,5 +89,4 @@ if __name__ == '__main__':
 		time.sleep(1)
 		print("dfpp",a.running)
 #		a.step()
-	print("booos")
 	a.stop()
