@@ -14,14 +14,13 @@ from cpuprimitives import *
 
 #
 #TODO
-#  interrupts
+# interrupts not quite right
 # badopcode on invalid instructions
-# 60hz interrupt
-# disassembler do sane things for invalid opcodes
+# 60hz interrupt location unknown
 # invalid opcode execution behavior
-#
-#
-
+# branch instruction interaction with interrupts
+# protect features not done
+# notify hardware of the passage pf time in  12.8 microsecond increments?
 
 
 try:
@@ -126,12 +125,16 @@ class SEL810CPU():
 
 	def _increment_cycle_count(self,incrnum=1):
 		for i in range(incrnum):
-				self.sim_ticks += 1
+			self.sim_ticks += 1
 
-				if self.hwoptions & SEL_OPTION_60HZ_RTC:
-					if (self.sim_ticks % CPU_HERTZ) == 0:
-							self.fire_60_hz_interrupt()
-		
+			if self.hwoptions & SEL_OPTION_60HZ_RTC:
+				if (self.sim_ticks % CPU_HERTZ) == 0:
+						self.fire_60_hz_interrupt()
+				
+			if (self.sim_ticks % int(CPU_HERTZ / .0000128)) == 0:
+				for n, unit in self.external_units.items():
+					unit.unit_tick(.0000128)
+	
 
 	def _shift_cycle_timing(self,shifts):
 		if 0 > shifts and shifts < 5:
@@ -173,10 +176,9 @@ class SEL810CPU():
         # Execution of this instruction is modified when caused by a priority interrupt in that the contents of the program counter are unchanged when transferred to the effective memory address. If the Program Protect and Instruction Trap option is included (and the Protect Mode switch is ON), when the SPB indirect instruction is caused by a priority interrupt' the status of the Protect Latch at the time of the interrupt is stored in bit 0 of the effective memory address.
 		address = self.ram[address].read()
 		
-		if self.hwoptions & (SEL_OPTION_PROTECT_1B_AND_TRAP_MEM | SEL_OPTION_PROTECT_2B_AND_TRAP_MEM):
+	#	if self.hwoptions & (SEL_OPTION_PROTECT_1B_AND_TRAP_MEM | SEL_OPTION_PROTECT_2B_AND_TRAP_MEM):
 			#If the Program Protect and Instruction Trap option is included (and the computer is in the protected mode), the status of the Protect Latch is also stored in bit 0 of the interrupt routine entry point by the SPB instruction.
 			
-		
 		self.ram[address].write(self._next_pc())
 		self.registers["Program Counter"].write(address)
 		self._increment_cycle_count(2)
@@ -238,7 +240,7 @@ class SEL810CPU():
 				if op.nmemonic == "LAA":
 					self.registers["A Register"].write(self.ram[address].read())
 					self._increment_cycle_count(2)
-					self._increment_pc
+					self._increment_pc()
 
 				elif op.nmemonic == "LBA":
 					self.registers["B Register"].write(self.ram[address].read())
@@ -897,7 +899,7 @@ def control_panel_backend(cpu):
 class SEL810Shell(cmd.Cmd):
 	intro = 'Welcome to the SEL emulator/debugger. Type help or ? to list commands.\n'
 	prompt = '(SEL810x) '
-	histfile = os.path.expanduser('~/.sel810_console_history')
+	histfile = os.path.expanduser(CONSOLE_HISTORY_FILE)
 	histfile_size = 1000
 	
 	def __init__(self):

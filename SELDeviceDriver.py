@@ -80,7 +80,6 @@ class ExternalUnit():
 				sfdVsEvent = servpoller.poll(250)
 				if len(sfdVsEvent):
 					descriptor, sEvent = sfdVsEvent[0]
-					
 					if sEvent & select.POLLIN:
 						self.devsock, client_address = self.sock.accept()
 						self.connected = True
@@ -95,14 +94,17 @@ class ExternalUnit():
 											break
 										
 									if Event & select.POLLIN:
-#										try:
-										(t,v) = self.recv_packet()
-#										except:
-#											self.connected = False
-#											self.devsock.close()
+										try:
+											(t,v) = self.recv_packet()
+										except:
+											self.connected = False
+											self.devsock.close()
+											
 										if t == 'c':
 											self.ceu = v
 											self.ceuresp.set()
+										if t == '*':#time response
+											pass
 										elif t == 't':
 											self.teu = v
 											self.teuresp.set()
@@ -121,12 +123,12 @@ class ExternalUnit():
 
 
 								if self.devq.qsize():
-#									try:
+									try:
 										(t,v) = self.devq.get()
 										self.send_packet((t,v))
-#									except:
-#										self.connected = False
-#										self.devsock.close()
+									except:
+										self.connected = False
+										self.devsock.close()
 
 		self.connected = False
 
@@ -176,6 +178,11 @@ class ExternalUnit():
 		self._wait_on_event(self.teuresp)
 		return self.teu
 
+
+	def unit_tick(self,data):
+		if self.connected:
+			self.devq.put(("*",data))
+		
 	def unit_write(self,data):
 		self.devq.put(("w",data))
 		self.wresp.clear()
@@ -253,7 +260,8 @@ class ExternalUnitHandler():
 						self.handle_read(v)
 					elif t == "?":
 						self.handle_ready(v)
-						
+					elif t == "*":
+						self.handle_time(v)
 							
 	def send_packet(self,packet):
 		pp = json.dumps(packet).encode("utf-8")
@@ -283,6 +291,13 @@ class ExternalUnitHandler():
 		'''left to the driver to handle'''
 		return True
 		
+	def update_time(self,ceu):
+		'''left to the driver to handle'''
+		pass
+
+	def handle_time(self, val):
+		self.update_time(val)
+
 	def handle_configure(self, val):
 		self.ceu = val
 		self.update_ceu(self.ceu)

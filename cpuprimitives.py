@@ -74,13 +74,13 @@ class COREMEMORY(list):
 		self.backingfile = backing_file
 
 		try:
-			binfile = loadProgramBin(self.backingfile)
+			binfile = loadProgramBin(self.backingfile) #fixme should be replaced
 		except:
 			binfile = [0] * MAX_MEM_SIZE
 
-		self.corememfile = open(self.backingfile,"wb")
+		self.corememfile = open(self.backingfile,"wb+")
 
-		for i in range(0, self.memmax:
+		for i in range(0, self.memmax):
 			cell = RAM_CELL(self,i)
 			self._ram.append(cell)
 			if len(binfile) > i:
@@ -98,9 +98,9 @@ class COREMEMORY(list):
 
 	def _write_attempt(self,prot_bit):
 		if self.cpu.hwoptions & (SEL_OPTION_PROTECT_1B_AND_TRAP_MEM | SEL_OPTION_PROTECT_2B_AND_TRAP_MEM):
-			if (self.cpu.registers["Protect Register"] & (1<<prot_bit)) > 0: #fixme, needs to be anded with protection mask
+			if (self.cpu.registers["Protect Register"].read() & (1<<prot_bit)) > 0: #fixme, needs to be anded with protection mask
 				#If the Program Protect and Instruction Trap option is included (and the computer is in the protected mode), the status of the Protect Latch is also stored in bit 0 of the interrupt routine entry point by the SPB instruction. When the program returns to the point of interrupt, the protect latch returns to the status present at the time of the interrupt.
-				self.cpu.fire_protection_violation_interrupt((self.cpu.registers["Protect Register"] & (1<<prot_bit)) > 0)
+				self.cpu.fire_protection_violation_interrupt((self.cpu.registers["Protect Register"].read() & (1<<prot_bit)) > 0)
 				return False
 		return True #will figure out the interrupt logic for this later
 		 
