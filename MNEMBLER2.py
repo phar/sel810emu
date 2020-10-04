@@ -2,7 +2,8 @@ from collections import *
 import re
 import pickle
 import struct
-	
+from util import *
+from defs import *
 	
 SEL810NONETYPE	= 0
 SEL810ATYPE 	= 1
@@ -46,75 +47,76 @@ FLAG_ADDRESS_MODE_ABSOLUTE	= 0
 FLAG_ADDRESS_MODE_RELATIVE	= 1
 
 #                         (type,					,decompose, 		opcode,	augmentcode, second_word, a\b)
-SEL810_OPCODES = {	"LAA":(SEL810_MREF_OPCODE,		OBJOP_MEMREF_LOAD,	0o01,	0,		False,	SEL810ATYPE),
-					"LBA":(SEL810_MREF_OPCODE,		OBJOP_MEMREF_LOAD,	0o02,	0,		False,	SEL810ATYPE),
-					"STA":(SEL810_MREF_OPCODE,		OBJOP_MEMREF_LOAD,	0o03,	0,		False,	SEL810ATYPE),
-					"STB":(SEL810_MREF_OPCODE,		OBJOP_MEMREF_LOAD,	0o04,	0,		False,	SEL810ATYPE),
-					"AMA":(SEL810_MREF_OPCODE,		OBJOP_MEMREF_LOAD,	0o05,	0,		False,	SEL810ATYPE),
-					"SMA":(SEL810_MREF_OPCODE,		OBJOP_MEMREF_LOAD,	0o06,	0,		False,	SEL810ATYPE),
-					"MPY":(SEL810_MREF_OPCODE,		OBJOP_MEMREF_LOAD,	0o07,	0,		False,	SEL810ATYPE),
-					"DIV":(SEL810_MREF_OPCODE,		OBJOP_MEMREF_LOAD,	0o10,	0,		False,	SEL810ATYPE),
-					"BRU":(SEL810_MREF_OPCODE,		OBJOP_MEMREF_LOAD,	0o11,	0,		False,	SEL810ATYPE),
-					"SPB":(SEL810_MREF_OPCODE,		OBJOP_MEMREF_LOAD,	0o12,	0,		False,	SEL810ATYPE),
-					"IMS":(SEL810_MREF_OPCODE,		OBJOP_MEMREF_LOAD,	0o14,	0,		False,	SEL810ATYPE),
+SEL810_OPCODES = {	"LAA":(SEL810_MREF_OPCODE,		OBJOP_MEMREF_LOAD,	0o01,	0,		False,	SEL_OPTION_NONE),
+					"LBA":(SEL810_MREF_OPCODE,		OBJOP_MEMREF_LOAD,	0o02,	0,		False,	SEL_OPTION_NONE),
+					"STA":(SEL810_MREF_OPCODE,		OBJOP_MEMREF_LOAD,	0o03,	0,		False,	SEL_OPTION_NONE),
+					"STB":(SEL810_MREF_OPCODE,		OBJOP_MEMREF_LOAD,	0o04,	0,		False,	SEL_OPTION_NONE),
+					"AMA":(SEL810_MREF_OPCODE,		OBJOP_MEMREF_LOAD,	0o05,	0,		False,	SEL_OPTION_NONE),
+					"SMA":(SEL810_MREF_OPCODE,		OBJOP_MEMREF_LOAD,	0o06,	0,		False,	SEL_OPTION_NONE),
+					"MPY":(SEL810_MREF_OPCODE,		OBJOP_MEMREF_LOAD,	0o07,	0,		False,	SEL_OPTION_NONE),
+					"DIV":(SEL810_MREF_OPCODE,		OBJOP_MEMREF_LOAD,	0o10,	0,		False,	SEL_OPTION_NONE),
+					"BRU":(SEL810_MREF_OPCODE,		OBJOP_MEMREF_LOAD,	0o11,	0,		False,	SEL_OPTION_NONE),
+					"SPB":(SEL810_MREF_OPCODE,		OBJOP_MEMREF_LOAD,	0o12,	0,		False,	SEL_OPTION_NONE),
+					"IMS":(SEL810_MREF_OPCODE,		OBJOP_MEMREF_LOAD,	0o14,	0,		False,	SEL_OPTION_NONE),
 
-					"CMA":(SEL810_MREF_OPCODE,		OBJOP_MEMREF_LOAD,	0o15,	0,		False,	SEL810ATYPE),
-					"AMB":(SEL810_MREF_OPCODE,		OBJOP_MEMREF_LOAD,	0o16,	0,		False,	SEL810ATYPE),
-					"HLT":(SEL810_AUGMENTED_OPCODE,	OBJOP_DIRECT_LOAD,	0,		0o00,	False,	SEL810ATYPE),
-					"RNA":(SEL810_AUGMENTED_OPCODE,	OBJOP_DIRECT_LOAD,	0,		0o01,	False,	SEL810ATYPE),
-					"NEG":(SEL810_AUGMENTED_OPCODE,	OBJOP_DIRECT_LOAD,	0,		0o02,	False,	SEL810ATYPE),
-					"CLA":(SEL810_AUGMENTED_OPCODE,	OBJOP_DIRECT_LOAD,	0,		0o03,	False,	SEL810ATYPE),
-					"TBA":(SEL810_AUGMENTED_OPCODE,	OBJOP_DIRECT_LOAD,	0,		0o04,	False,	SEL810ATYPE),
-					"TAB":(SEL810_AUGMENTED_OPCODE,	OBJOP_DIRECT_LOAD,	0,		0o05,	False,	SEL810ATYPE),
-					"IAB":(SEL810_AUGMENTED_OPCODE,	OBJOP_DIRECT_LOAD,	0,		0o06,	False,	SEL810ATYPE),
-					"CSB":(SEL810_AUGMENTED_OPCODE,	OBJOP_DIRECT_LOAD,	0,		0o07,	False,	SEL810ATYPE),
-					"RSA":(SEL810_AUGMENTED_OPCODE,	OBJOP_DIRECT_LOAD,	0,		0o10,	False,	SEL810ATYPE),
-					"LSA":(SEL810_AUGMENTED_OPCODE,	OBJOP_DIRECT_LOAD,	0,		0o11,	False,	SEL810ATYPE),
-					"FRA":(SEL810_AUGMENTED_OPCODE,	OBJOP_DIRECT_LOAD,	0,		0o12,	False,	SEL810ATYPE),
-					"FLL":(SEL810_AUGMENTED_OPCODE,	OBJOP_DIRECT_LOAD,	0,		0o13,	False,	SEL810ATYPE),
-					"FRL":(SEL810_AUGMENTED_OPCODE,	OBJOP_DIRECT_LOAD,	0,		0o14,	False,	SEL810ATYPE),
-					"RSL":(SEL810_AUGMENTED_OPCODE,	OBJOP_DIRECT_LOAD,	0,		0o15,	False,	SEL810ATYPE),
-					"LSL":(SEL810_AUGMENTED_OPCODE,	OBJOP_DIRECT_LOAD,	0,		0o16,	False,	SEL810ATYPE),
-					"FLA":(SEL810_AUGMENTED_OPCODE,	OBJOP_DIRECT_LOAD,	0,		0o17,	False,	SEL810ATYPE),
-					"ASC":(SEL810_AUGMENTED_OPCODE,	OBJOP_DIRECT_LOAD,	0,		0o20,	False,	SEL810ATYPE),
-					"SAS":(SEL810_AUGMENTED_OPCODE,	OBJOP_DIRECT_LOAD,	0,		0o21,	False,	SEL810ATYPE),
-					"SAZ":(SEL810_AUGMENTED_OPCODE,	OBJOP_DIRECT_LOAD,	0,		0o22,	False,	SEL810ATYPE),
-					"SAN":(SEL810_AUGMENTED_OPCODE,	OBJOP_DIRECT_LOAD,	0,		0o23,	False,	SEL810ATYPE),
-					"SAP":(SEL810_AUGMENTED_OPCODE,	OBJOP_DIRECT_LOAD,	0,		0o24,	False,	SEL810ATYPE),
-					"SOF":(SEL810_AUGMENTED_OPCODE,	OBJOP_DIRECT_LOAD,	0,		0o25,	False,	SEL810ATYPE),
-					"IBS":(SEL810_AUGMENTED_OPCODE,	OBJOP_DIRECT_LOAD,	0,		0o26,	False,	SEL810ATYPE),
-					"ABA":(SEL810_AUGMENTED_OPCODE,	OBJOP_DIRECT_LOAD,	0,		0o27,	False,	SEL810ATYPE),
-					"OBA":(SEL810_AUGMENTED_OPCODE,	OBJOP_DIRECT_LOAD,	0,		0o30,	False,	SEL810ATYPE),
-					"LCS":(SEL810_AUGMENTED_OPCODE,	OBJOP_DIRECT_LOAD,	0,		0o31,	False,	SEL810ATYPE),
-					"SNO":(SEL810_AUGMENTED_OPCODE,	OBJOP_DIRECT_LOAD,	0,		0o32,	False,	SEL810ATYPE),
-					"NOP":(SEL810_AUGMENTED_OPCODE,	OBJOP_DIRECT_LOAD,	0,		0o33,	False,	SEL810ATYPE),
-					"CNS":(SEL810_AUGMENTED_OPCODE,	OBJOP_DIRECT_LOAD,	0,		0o34,	False,	SEL810ATYPE),
-					
-					"TOI":(SEL810_AUGMENTED_OPCODE,	OBJOP_DIRECT_LOAD,	0,		0o35,	False,	SEL810ATYPE),
-					"LOB":(SEL810_AUGMENTED_OPCODE,	OBJOP_DIRECT_LOAD,	0,		0o36,	True,	SEL810ATYPE),
-					"OVS":(SEL810_AUGMENTED_OPCODE,	OBJOP_DIRECT_LOAD,	0,		0o37,	False,	SEL810BTYPE),
-					"STX":(SEL810_AUGMENTED_OPCODE,	OBJOP_DIRECT_LOAD,	0,		0o44,	True,	SEL810BTYPE),
-					"TBP":(SEL810_AUGMENTED_OPCODE,	OBJOP_DIRECT_LOAD,	0,		0o40,	False,	SEL810BTYPE),
-					"TPB":(SEL810_AUGMENTED_OPCODE,	OBJOP_DIRECT_LOAD,	0,		0o41,	False,	SEL810BTYPE),
-					"TBV":(SEL810_AUGMENTED_OPCODE,	OBJOP_DIRECT_LOAD,	0,		0o42,	False,	SEL810ATYPE),
-					"TVB":(SEL810_AUGMENTED_OPCODE,	OBJOP_DIRECT_LOAD,	0,		0o43,	False,	SEL810ATYPE),
-					"LIX":(SEL810_AUGMENTED_OPCODE,	OBJOP_DIRECT_LOAD,	0,		0o45,	True,	SEL810BTYPE),
-					"XPX":(SEL810_AUGMENTED_OPCODE,	OBJOP_DIRECT_LOAD,	0,		0o46,	False,	SEL810BTYPE),
-					"XPB":(SEL810_AUGMENTED_OPCODE,	OBJOP_DIRECT_LOAD,	0,		0o47,	False,	SEL810BTYPE),
-					"SXB":(SEL810_AUGMENTED_OPCODE,	OBJOP_DIRECT_LOAD,	0,		0o50,	False,	SEL810BTYPE),
-					"IXS":(SEL810_AUGMENTED_OPCODE,	OBJOP_DIRECT_LOAD,	0,		0o51,	False,	SEL810ATYPE),
-					"TAX":(SEL810_AUGMENTED_OPCODE,	OBJOP_DIRECT_LOAD,	0,		0o52,	False,	SEL810BTYPE),
-					
-					"TXA":(SEL810_AUGMENTED_OPCODE,	OBJOP_DIRECT_LOAD,	0,		0o53,	False,	SEL810BTYPE),
-					"CEU":(SEL810_IO_OPCODE,		OBJOP_DIRECT_LOAD,	0o13,	0o00,	True,	SEL810ATYPE),
-					"TEU":(SEL810_IO_OPCODE,		OBJOP_DIRECT_LOAD,	0o13,	0o01,	True,	SEL810ATYPE),
-					"SNS":(SEL810_IO_OPCODE,		OBJOP_DIRECT_LOAD,	0o13,	0o04,	False,	SEL810ATYPE),
-					"AIP":(SEL810_IO_OPCODE,		OBJOP_DIRECT_LOAD,	0o17,	0o01,	False,	SEL810ATYPE),
-					"MOP":(SEL810_IO_OPCODE,		OBJOP_DIRECT_LOAD,	0o17,	0o02,	True,	SEL810ATYPE),
-					"MIP":(SEL810_IO_OPCODE,		OBJOP_DIRECT_LOAD,	0o17,	0o03,	False,	SEL810ATYPE),
-					"AOP":(SEL810_IO_OPCODE,		OBJOP_DIRECT_LOAD,	0o17,	0o00,	False,	SEL810ATYPE),
-					"PID":(SEL810_INT_OPCODES,		OBJOP_DIRECT_LOAD,	0o13,	0o0601,	False,	SEL810ATYPE), #fixme
-					"PIE":(SEL810_INT_OPCODES,		OBJOP_DIRECT_LOAD,	0o13,	0o0600,	False,	SEL810ATYPE)}#fixme
+					"CMA":(SEL810_MREF_OPCODE,		OBJOP_MEMREF_LOAD,	0o15,	0,		False,	SEL_OPTION_NONE),
+					"AMB":(SEL810_MREF_OPCODE,		OBJOP_MEMREF_LOAD,	0o16,	0,		False,	SEL_OPTION_NONE),
+					"HLT":(SEL810_AUGMENTED_OPCODE,	OBJOP_DIRECT_LOAD,	0,		0o00,	False,	SEL_OPTION_NONE),
+					"RNA":(SEL810_AUGMENTED_OPCODE,	OBJOP_DIRECT_LOAD,	0,		0o01,	False,	SEL_OPTION_NONE),
+					"NEG":(SEL810_AUGMENTED_OPCODE,	OBJOP_DIRECT_LOAD,	0,		0o02,	False,	SEL_OPTION_NONE),
+					"CLA":(SEL810_AUGMENTED_OPCODE,	OBJOP_DIRECT_LOAD,	0,		0o03,	False,	SEL_OPTION_NONE),
+					"TBA":(SEL810_AUGMENTED_OPCODE,	OBJOP_DIRECT_LOAD,	0,		0o04,	False,	SEL_OPTION_NONE),
+					"TAB":(SEL810_AUGMENTED_OPCODE,	OBJOP_DIRECT_LOAD,	0,		0o05,	False,	SEL_OPTION_NONE),
+					"IAB":(SEL810_AUGMENTED_OPCODE,	OBJOP_DIRECT_LOAD,	0,		0o06,	False,	SEL_OPTION_NONE),
+					"CSB":(SEL810_AUGMENTED_OPCODE,	OBJOP_DIRECT_LOAD,	0,		0o07,	False,	SEL_OPTION_NONE),
+					"RSA":(SEL810_AUGMENTED_OPCODE,	OBJOP_DIRECT_LOAD,	0,		0o10,	False,	SEL_OPTION_NONE),
+					"LSA":(SEL810_AUGMENTED_OPCODE,	OBJOP_DIRECT_LOAD,	0,		0o11,	False,	SEL_OPTION_NONE),
+					"FRA":(SEL810_AUGMENTED_OPCODE,	OBJOP_DIRECT_LOAD,	0,		0o12,	False,	SEL_OPTION_NONE),
+					"FLL":(SEL810_AUGMENTED_OPCODE,	OBJOP_DIRECT_LOAD,	0,		0o13,	False,	SEL_OPTION_NONE),
+					"FRL":(SEL810_AUGMENTED_OPCODE,	OBJOP_DIRECT_LOAD,	0,		0o14,	False,	SEL_OPTION_NONE),
+					"RSL":(SEL810_AUGMENTED_OPCODE,	OBJOP_DIRECT_LOAD,	0,		0o15,	False,	SEL_OPTION_NONE),
+					"LSL":(SEL810_AUGMENTED_OPCODE,	OBJOP_DIRECT_LOAD,	0,		0o16,	False,	SEL_OPTION_NONE),
+					"FLA":(SEL810_AUGMENTED_OPCODE,	OBJOP_DIRECT_LOAD,	0,		0o17,	False,	SEL_OPTION_NONE),
+					"ASC":(SEL810_AUGMENTED_OPCODE,	OBJOP_DIRECT_LOAD,	0,		0o20,	False,	SEL_OPTION_NONE),
+					"SAS":(SEL810_AUGMENTED_OPCODE,	OBJOP_DIRECT_LOAD,	0,		0o21,	False,	SEL_OPTION_NONE),
+					"SAZ":(SEL810_AUGMENTED_OPCODE,	OBJOP_DIRECT_LOAD,	0,		0o22,	False,	SEL_OPTION_NONE),
+					"SAN":(SEL810_AUGMENTED_OPCODE,	OBJOP_DIRECT_LOAD,	0,		0o23,	False,	SEL_OPTION_NONE),
+					"SAP":(SEL810_AUGMENTED_OPCODE,	OBJOP_DIRECT_LOAD,	0,		0o24,	False,	SEL_OPTION_NONE),
+					"SOF":(SEL810_AUGMENTED_OPCODE,	OBJOP_DIRECT_LOAD,	0,		0o25,	False,	SEL_OPTION_NONE),
+					"IBS":(SEL810_AUGMENTED_OPCODE,	OBJOP_DIRECT_LOAD,	0,		0o26,	False,	SEL_OPTION_NONE),
+					"ABA":(SEL810_AUGMENTED_OPCODE,	OBJOP_DIRECT_LOAD,	0,		0o27,	False,	SEL_OPTION_NONE),
+					"OBA":(SEL810_AUGMENTED_OPCODE,	OBJOP_DIRECT_LOAD,	0,		0o30,	False,	SEL_OPTION_NONE),
+					"LCS":(SEL810_AUGMENTED_OPCODE,	OBJOP_DIRECT_LOAD,	0,		0o31,	False,	SEL_OPTION_NONE),
+					"SNO":(SEL810_AUGMENTED_OPCODE,	OBJOP_DIRECT_LOAD,	0,		0o32,	False,	SEL_OPTION_NONE),
+					"NOP":(SEL810_AUGMENTED_OPCODE,	OBJOP_DIRECT_LOAD,	0,		0o33,	False,	SEL_OPTION_NONE),
+					"CNS":(SEL810_AUGMENTED_OPCODE,	OBJOP_DIRECT_LOAD,	0,		0o34,	False,	SEL_OPTION_NONE),
+					"TOI":(SEL810_AUGMENTED_OPCODE,	OBJOP_DIRECT_LOAD,	0,		0o35,	False,	SEL_OPTION_NONE),
+					"LOB":(SEL810_AUGMENTED_OPCODE,	OBJOP_DIRECT_LOAD,	0,		0o36,	True,	SEL_OPTION_NONE),
+					"OVS":(SEL810_AUGMENTED_OPCODE,	OBJOP_DIRECT_LOAD,	0,		0o37,	False,	SEL_OPTION_HW_INDEX),
+					"TBP":(SEL810_AUGMENTED_OPCODE,	OBJOP_DIRECT_LOAD,	0,		0o40,	False,	SEL_OPTION_PROTECT_1B_AND_TRAP_MEM),
+					"TPB":(SEL810_AUGMENTED_OPCODE,	OBJOP_DIRECT_LOAD,	0,		0o41,	False,	SEL_OPTION_PROTECT_1B_AND_TRAP_MEM),
+					"TBV":(SEL810_AUGMENTED_OPCODE,	OBJOP_DIRECT_LOAD,	0,		0o42,	False,	SEL_OPTION_VBR),
+					"TVB":(SEL810_AUGMENTED_OPCODE,	OBJOP_DIRECT_LOAD,	0,		0o43,	False,	SEL_OPTION_VBR),
+					"STX":(SEL810_AUGMENTED_OPCODE,	OBJOP_DIRECT_LOAD,	0,		0o44,	True,	SEL_OPTION_HW_INDEX),
+					"LIX":(SEL810_AUGMENTED_OPCODE,	OBJOP_DIRECT_LOAD,	0,		0o45,	True,	SEL_OPTION_HW_INDEX),
+					"XPX":(SEL810_AUGMENTED_OPCODE,	OBJOP_DIRECT_LOAD,	0,		0o46,	False,	SEL_OPTION_HW_INDEX),
+					"XPB":(SEL810_AUGMENTED_OPCODE,	OBJOP_DIRECT_LOAD,	0,		0o47,	False,	SEL_OPTION_HW_INDEX),
+					"SXB":(SEL810_AUGMENTED_OPCODE,	OBJOP_DIRECT_LOAD,	0,		0o50,	False,	SEL_OPTION_HW_INDEX),
+					"IXS":(SEL810_AUGMENTED_OPCODE,	OBJOP_DIRECT_LOAD,	0,		0o51,	False,	SEL_OPTION_NONE),
+					"TAX":(SEL810_AUGMENTED_OPCODE,	OBJOP_DIRECT_LOAD,	0,		0o52,	False,	SEL_OPTION_HW_INDEX),
+					"TXA":(SEL810_AUGMENTED_OPCODE,	OBJOP_DIRECT_LOAD,	0,		0o53,	False,	SEL_OPTION_HW_INDEX),
+#Table 3-2. SEL BlOB Mnemonic Instructions SEL reference manual.. lost instructions.. the docs say B-accumulator,but the instruction naming suggest A was intended since a working B instruction exists
+#					"TPA":(SEL810_AUGMENTED_OPCODE,	OBJOP_DIRECT_LOAD,	0,		0oxx,	False,	SEL_OPTION_PROTECT_AND_TRAP_MEM), #Transfer B-Accumulator to Protect Register
+#					"TAP":(SEL810_AUGMENTED_OPCODE,	OBJOP_DIRECT_LOAD,	0,		0oxx,	False,	SEL_OPTION_PROTECT_AND_TRAP_MEM | SEL_OPTION_VBR), #Transfer Protect Register to B-Accurnulator
+					"CEU":(SEL810_IO_OPCODE,		OBJOP_DIRECT_LOAD,	0o13,	0o00,	True,	SEL_OPTION_NONE),
+					"TEU":(SEL810_IO_OPCODE,		OBJOP_DIRECT_LOAD,	0o13,	0o01,	True,	SEL_OPTION_NONE),
+					"SNS":(SEL810_IO_OPCODE,		OBJOP_DIRECT_LOAD,	0o13,	0o04,	False,	SEL_OPTION_NONE),
+					"AIP":(SEL810_IO_OPCODE,		OBJOP_DIRECT_LOAD,	0o17,	0o01,	False,	SEL_OPTION_NONE),
+					"MOP":(SEL810_IO_OPCODE,		OBJOP_DIRECT_LOAD,	0o17,	0o02,	True,	SEL_OPTION_NONE),
+					"MIP":(SEL810_IO_OPCODE,		OBJOP_DIRECT_LOAD,	0o17,	0o03,	False,	SEL_OPTION_NONE),
+					"AOP":(SEL810_IO_OPCODE,		OBJOP_DIRECT_LOAD,	0o17,	0o00,	False,	SEL_OPTION_NONE),
+					"PID":(SEL810_INT_OPCODES,		OBJOP_DIRECT_LOAD,	0o13,	0o0601,	True,	SEL_OPTION_NONE), #fixme
+					"PIE":(SEL810_INT_OPCODES,		OBJOP_DIRECT_LOAD,	0o13,	0o0600,	True,	SEL_OPTION_NONE)}#fixme
 
 
 PSEUDO_OPCODES = {	"ABS": (SEL810_PSEUDO_OPCODE,	OBJOP_NONE_DUMMY),
@@ -217,17 +219,6 @@ DECOMPOSE_BIN_STYLE = [
 
 
 
-def dec2twoscmplment(val, bits=16):
-	if val < 0:
-		val = val + 2**bits
-	return val
-
-
-def twoscmplment2dec(val,bits=16):
-	if val & (1<<(bits-1)):
-		val = val - (2**bits)
-	return val
-	
 
 
 def parse_arg(arg,curr_addr=0,symbols={}):
@@ -396,20 +387,21 @@ class SELOPCODE(dict):
 		else:
 			self.nmemonic = self._get_nmemonic(peekdict["opcode"])
 
-		try:
-			self.field_spec =  DECOMPOSE_BIN_STYLE[SEL810_OPCODES[self.nmemonic][1]]
-			self.set_nmemonic(self.nmemonic)
-		except:
-			print("FAIL",self.nmemonic,peekdict["opcode"])
-	
-	
-		self.fields = self._populate_fields_from_spec(self.field_spec)
-		for n,v in DECOMPOSE_BIN_STYLE[SEL810_OPCODES[self.nmemonic][0]].items():
-			if n in ["operand"]:
-				self.fields[n] = twoscmplment2dec(int(bits[v[0]:v[1]],2),  v[1] - v[0])
-			else:
-				self.fields[n] = int(bits[v[0]:v[1]],2)
-		self.ispseudo_opcode = False
+		if self.nmemonic != None:
+			try:
+				self.field_spec =  DECOMPOSE_BIN_STYLE[SEL810_OPCODES[self.nmemonic][1]]
+				self.set_nmemonic(self.nmemonic)
+			except:
+				print("FAIL",self.nmemonic,peekdict["opcode"])
+		
+		
+			self.fields = self._populate_fields_from_spec(self.field_spec)
+			for n,v in DECOMPOSE_BIN_STYLE[SEL810_OPCODES[self.nmemonic][0]].items():
+				if n in ["operand"]:
+					self.fields[n] = twoscmplment2dec(int(bits[v[0]:v[1]],2),  v[1] - v[0])
+				else:
+					self.fields[n] = int(bits[v[0]:v[1]],2)
+			self.ispseudo_opcode = False
 
 	def set_nmemonic(self,nmemonic):
 		self.nmemonic = nmemonic
@@ -595,7 +587,7 @@ class SELOPCODE(dict):
 		binary = []
 		if not self.ispseudo_opcode:
 			if "address" in self.fields:  #hack for map0
-				if (current_addr  > 512) and self._resolve_to_value( self.fields["address"]) < 512: #map0 if we're not in map0 but the address is
+				if (current_addr  > 512) and self._resolve_to_value( self.fields["address"], current_addr, symbols) < 512: #map0 if we're not in map0 but the address is
 					self.fields["m"] = False
 
 			for n, (s,e) in self.field_spec.items():
@@ -728,110 +720,112 @@ class SELOPCODE(dict):
 				
 				
 	def pack_asm(self,curr_addr=0,symbols={}):
-		l = "     "
-		if self.label:
-			if curr_addr == symbols[self.label]:
-				l = self.label.ljust(5)
-			else:
-				if self.label:
-					l = "*" + self.label + "   %d" % curr_addr + "   %d" %  symbols[self.label]
-				
-		args = []
-		if not self.ispseudo_opcode:
-			indir = " "
-			if self.nmemonic not in ["PID","PIE"]:
-				for field in ["operand","address","unit"]:
-					if field in self.fields:
-						if self.operand_is_constant:
-							args.append("='%o" % self._resolve_to_value(self.fields[field] ,curr_addr,symbols)) #fixme, could be a flat value
-						else:
-							args.append("'%o" % self._resolve_to_value(self.fields[field] ,curr_addr,symbols))
-							
-				if "i" in self.fields and self.fields["i"]:
-						indir = "*"
-				if "wait" in self.fields and  self.fields["wait"]:
-						args.append("W")
-				if "r" in self.fields and self.fields["r"]:
-						args.append("R")
-				if "x" in self.fields and self.fields["x"]:
-						args.append("1")
-				if "shifts" in self.fields:
-					if self.fields["shifts"]:
-						args.append("%d" % self._resolve_to_value( self.fields["shifts"],curr_addr,symbols))
-
-			str = "%s%s%s %s" % (l,self.nmemonic,indir, ",".join(args))
-			if self.comment:
-				str += (" " * (self.comment_space - len(str)))
-				str += "*" + self.comment
-		else:
-			if self.nmemonic == "DATA":
-				lines = []
-				if not self.operand_is_constant:
-					if self.data:
-						for d in  self.data:
-							args = []
-							dd =  self._resolve_to_value(d,curr_addr,symbols)
-							args.append("'%o" % dd)
-							str = ""
-							if not len(lines):
-								str += "%s" % l.ljust(5)
-							else:
-								str += "     "
-							str += "%s  %s" % (self.nmemonic, ",".join(args))
-
-							if self.comment and not len(lines):
-								str += (" " * (self.comment_space - len(str)))
-								str += "*" + self.comment
-							else:
-								pass
-							lines.append(str)
-						return(lines)
-						
-			elif self.nmemonic == "***":
+		if self.nmemonic != None:
+			l = "     "
+			if self.label:
+				if curr_addr == symbols[self.label]:
+					l = self.label.ljust(5)
+				else:
+					if self.label:
+						l = "*" + self.label + "   %d" % curr_addr + "   %d" %  symbols[self.label]
+					
+			args = []
+			if not self.ispseudo_opcode:
 				indir = " "
-				if "i" in self.fields:
-					if self.fields["i"]:
-						indir = "*"
-				str = "%s%s%s  %s" % (l,self.nmemonic,indir, ",".join(args))
-			elif self.nmemonic == "ORG":
-				args.append("'%o" % self._resolve_to_value(self.fields["address"],curr_addr,symbols))
-				str = "%s%s  %s" % (l,self.nmemonic, ",".join(args))
-			elif self.nmemonic == "DAC":
-				args.append("'%o" % self._resolve_to_value(self.fields["operand"],curr_addr,symbols))
-				if "x" in self.fields and self.fields["x"]:
-						args.append("1")
-				str = "%s%s  %s" % (l,self.nmemonic, ",".join(args))
-			elif self.nmemonic == "EAC":
-				args.append("'%o" % self._resolve_to_value(self.fields["operand"],curr_addr,symbols))
-				if "x" in self.fields and self.fields["x"]:
-						args.append("1")
-				str = "%s%s  %s" % (l,self.nmemonic, ",".join(args))
-			elif self.nmemonic == "END":
-				str = "%s%s  %s" % (l,self.nmemonic, ",".join(args))
+				if self.nmemonic not in ["PID","PIE"]:
+					for field in ["operand","address","unit"]:
+						if field in self.fields:
+							if self.operand_is_constant:
+								args.append("='%o" % self._resolve_to_value(self.fields[field] ,curr_addr,symbols)) #fixme, could be a flat value
+							else:
+								args.append("'%o" % self._resolve_to_value(self.fields[field] ,curr_addr,symbols))
+								
+					if "i" in self.fields and self.fields["i"]:
+							indir = "*"
+					if "wait" in self.fields and  self.fields["wait"]:
+							args.append("W")
+					if "r" in self.fields and self.fields["r"]:
+							args.append("R")
+					if "x" in self.fields and self.fields["x"]:
+							args.append("1")
+					if "shifts" in self.fields:
+						if self.fields["shifts"]:
+							args.append("%d" % self._resolve_to_value( self.fields["shifts"],curr_addr,symbols))
 
-			elif self.nmemonic == "BSS":
-				lines = []
-				for d in self.data:
-					str = ""
-					args = []
-					if  not len(lines):
-						str += "%s" % l.ljust(5)
-					else:
-						str += "     "
-					args.append("'%o" % 0)
-					str += "DATA  %s" % (",".join(args))
-					lines.append(str)
-				return lines
-
-			elif self.nmemonic == "BES":
-				str = "%s%s  %s" % (l,self.nmemonic, ",".join(args))
+				str = "%s%s%s %s" % (l,self.nmemonic,indir, ",".join(args))
+				if self.comment:
+					str += (" " * (self.comment_space - len(str)))
+					str += "*" + self.comment
 			else:
-				str = "******!!************something bad happened" + self.nmemonic
+				if self.nmemonic == "DATA":
+					lines = []
+					if not self.operand_is_constant:
+						if self.data:
+							for d in  self.data:
+								args = []
+								dd =  self._resolve_to_value(d,curr_addr,symbols)
+								args.append("'%o" % dd)
+								str = ""
+								if not len(lines):
+									str += "%s" % l.ljust(5)
+								else:
+									str += "     "
+								str += "%s  %s" % (self.nmemonic, ",".join(args))
 
-			if self.comment:
-				str += (" " * (self.comment_space - len(str)))
-				str += "*" + self.comment
+								if self.comment and not len(lines):
+									str += (" " * (self.comment_space - len(str)))
+									str += "*" + self.comment
+								else:
+									pass
+								lines.append(str)
+							return(lines)
+							
+				elif self.nmemonic == "***":
+					indir = " "
+					if "i" in self.fields:
+						if self.fields["i"]:
+							indir = "*"
+					str = "%s%s%s  %s" % (l,self.nmemonic,indir, ",".join(args))
+				elif self.nmemonic == "ORG":
+					args.append("'%o" % self._resolve_to_value(self.fields["address"],curr_addr,symbols))
+					str = "%s%s  %s" % (l,self.nmemonic, ",".join(args))
+				elif self.nmemonic == "DAC":
+					args.append("'%o" % self._resolve_to_value(self.fields["operand"],curr_addr,symbols))
+					if "x" in self.fields and self.fields["x"]:
+							args.append("1")
+					str = "%s%s  %s" % (l,self.nmemonic, ",".join(args))
+				elif self.nmemonic == "EAC":
+					args.append("'%o" % self._resolve_to_value(self.fields["operand"],curr_addr,symbols))
+					if "x" in self.fields and self.fields["x"]:
+							args.append("1")
+					str = "%s%s  %s" % (l,self.nmemonic, ",".join(args))
+				elif self.nmemonic == "END":
+					str = "%s%s  %s" % (l,self.nmemonic, ",".join(args))
 
+				elif self.nmemonic == "BSS":
+					lines = []
+					for d in self.data:
+						str = ""
+						args = []
+						if  not len(lines):
+							str += "%s" % l.ljust(5)
+						else:
+							str += "     "
+						args.append("'%o" % 0)
+						str += "DATA  %s" % (",".join(args))
+						lines.append(str)
+					return lines
+
+				elif self.nmemonic == "BES":
+					str = "%s%s  %s" % (l,self.nmemonic, ",".join(args))
+				else:
+					str = "******!!************something bad happened" + self.nmemonic
+
+				if self.comment:
+					str += (" " * (self.comment_space - len(str)))
+					str += "*" + self.comment
+		else:
+			str = "(bad opcode)"
 		return [str]
 		
 	def _get_nmemonic(self,testopcode, testaugmentcode=None):
@@ -1073,14 +1067,14 @@ class SEL810_ASSEMBLER():
 # BES
 
 if __name__ == '__main__':
-	asm = SEL810_ASSEMBLER("sel810asm/asm/HELLO_WORLD.ASM")#("sel810asm/asm/CLT4_V1.ASM")#("sel810asm/asm/boot.asm")
+	asm = SEL810_ASSEMBLER(sys.argv[1]) #sel810asm/asm/HELLO_WORLD.ASM")#("sel810asm/asm/CLT4_V1.ASM")#("sel810asm/asm/boot.asm")
 	asm.build_symbols()
 	print(asm.macros)
 	asm.build_constants()
 	asm.build_executable()
 	print(asm.symbols)
 	asm.write_symbols()
-
-	#op = SELOPCODE(opcode=0)
-	#print(op.pack_asm())
+#	for i in range(65535):
+#		op = SELOPCODE(opcode=i)
+#		print(op.pack_asm())
 
