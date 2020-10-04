@@ -218,9 +218,9 @@ class ExternalUnitHandler():
 		self.sock.connect(self.devicenode)
 		self.connected = True
 		self.chardev = chardev
-		self.rq = queue.Queue()
+		self.rq = queue.Queue(1)
 		self.devq = queue.Queue()
-		self.wq = queue.Queue()
+		self.wq = queue.Queue(1)
 		self.ceu = 0
 
 	def start(self):
