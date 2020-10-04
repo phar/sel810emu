@@ -225,9 +225,7 @@ class SEL810CPU():
 			base = base | self.registers["VBR Register"].read() << 9
 
 		if indir:
-#			base = self.ram[base].read()
-			base = self._resolve_second_word_address(map)
-			
+			base = self.ram[base].read()			
 
 		return base & MAX_MEM_SIZE
 
