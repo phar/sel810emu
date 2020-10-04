@@ -200,16 +200,14 @@ class SEL810CPU():
 	def get_current_map_addr(self):
 		return  self.registers["Program Counter"].read() & 0xfc00
 	
-	
-	def _resolve_second_word_address(self,map):
-		indir = (self.ram[self._next_pc()].read() & 0x4000) > 0
-		idx = (self.ram[self._next_pc()].read() & 0x8000) > 0
-		addr = (self.ram[self._next_pc()].read() & 0x3fff)
-
-#		if indir: #address
+	def _resolve_indirect_address_word(self,word):
+		indir = (word & 0x4000) > 0
+		idx = (word & 0x8000) > 0
+		addr = (word & 0x3fff)
 		return self._resolve_address(addr,map,indir,idx)
-#		else: #immediate
-#			return self._resolve_address(addr,map,0,0)
+
+	def _resolve_second_word_address(self,map):
+		return  self._resolve_indirect_address_word(self.ram[self._next_pc()].read())
 	
 	def _resolve_address(self,base,map=0,indir=False,index=0):
 		if map:
@@ -225,7 +223,7 @@ class SEL810CPU():
 			base = base | self.registers["VBR Register"].read() << 9
 
 		if indir:
-			base = self.ram[base].read()			
+			base = resolve_indirect_address_word(self.ram[base].read())
 
 		return base & MAX_MEM_SIZE
 
