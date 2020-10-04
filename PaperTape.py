@@ -24,6 +24,7 @@ class PaperTapeReaderPunch(ExternalUnitHandler):
 
 class PaperTapeDriver():
 	def __init__(self, devicenode, input_tape=None,output_tape=None):
+		self.thread = threading.Thread(target=self.paper_tape_thread, args=(devicenode,input_tape))
 		self.done = False
 		self.ifile = None
 		self.ofile = None
@@ -38,9 +39,8 @@ class PaperTapeDriver():
 			self.ofile = open(self.output_tape,"wb")
 
 		self.bytesdone = 0
-		self.peripheral = PaperTapeReaderPunch(socketname,chardev=True)
+		self.peripheral = PaperTapeReaderPunch(devicenode,chardev=True)
 
-		self.thread = threading.Thread(target=self.paper_tape_thread, args=(devicenode,self.input_tape))
 
 	def start(self):
 		self.peripheral.start()
@@ -65,25 +65,24 @@ class PaperTapeDriver():
 					if self.bytesdone == self.ifilesize: #exit when the last byte is sent
 						self.done = True
 						
-			if e.pollread(): #it wrote data to us
+			if self.peripheral.pollread(): #it wrote data to us
 				if self.output_tape:
 					self.peripheral.event("out")
-					self.ofile.write(e.read())
+					self.ofile.write(bytes(self.peripheral.read()))
 								
 								
 
 if __name__ == '__main__':
-	raise "i have not so much as bothered to test this"
 	try:
 		(infile,outfile) = sys.argv[1:3]
 	except:
 		print("papertape <intape> <outtape>")
 		sys.exit()
 		
-	a = PaperTapeDriver("/tmp/SEL810_paper_tape",infile,outfile)
+	a = PaperTapeDriver("/tmp/SEL810_asr33",infile,outfile)
 	a.start()
 	while(not a.done):
-		print("%.2f percent complete" % (a.bytesdone/ a.filesize) * 100)
+		print("%.2f percent complete" % ((a.bytesdone/ a.ifilesize) * 100))
 		time.sleep(5)
 		
 	self.peripheral.connected = False

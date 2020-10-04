@@ -198,12 +198,13 @@ class SEL810CPU():
 				self.latch["stall"] = True
 		
 	def get_current_map_addr(self):
-		return  self.registers["Program Counter"].read() & 0xfc00
+		return  self.registers["Program Counter"].read() & 0xfe00
 	
 	def _resolve_indirect_address_word(self,word):
 		indir = (word & 0x4000) > 0
 		idx = (word & 0x8000) > 0
 		addr = (word & 0x3fff)
+		map = 0
 		return self._resolve_address(addr,map,indir,idx)
 
 	def _resolve_second_word_address(self,map):
@@ -212,6 +213,7 @@ class SEL810CPU():
 	def _resolve_address(self,base,map=0,indir=False,index=0):
 		if map:
 			base = base + self.get_current_map_addr()
+#			print("resolving map",get_current_map_addr(),"new base",base)
 	
 		if index:
 			if self.latch["index_pointer"]:
@@ -221,9 +223,9 @@ class SEL810CPU():
 				
 		elif not map and self.hwoptions & SEL_OPTION_VBR: # Whenever the MAP and index bits of an instruction are set to logical zero, the contents of the VBR are treated as the most significant bits of, and appended to, the nine-bit operand address.
 			base = base | self.registers["VBR Register"].read() << 9
-
+#			print("HIT VBR")
 		if indir:
-			base = resolve_indirect_address_word(self.ram[base].read())
+			base = self._resolve_indirect_address_word(self.ram[base].read())
 
 		return base & MAX_MEM_SIZE
 
@@ -290,6 +292,7 @@ class SEL810CPU():
 				elif op.nmemonic == "BRU":
 					#fixme When the TOI and BRU indirect (or LOB) instructions are executed following the interrupt subroutine, the protect latch is returned to the status present a t the time the interrupt occurred.
 					#If the Program Protect and Instruction Trap option is in- cluded (and the Protect Mode switch is ON), when the BRU indirect instruction is executed following a TOI instruction to exit from a priority interrupt routine, bits 2 through 15 of the effective address replace the contents of program counter, and the Protect Latch is set to the state of bit "0" of the effec- tive address.
+#					print("BRU",address)
 					self.registers["Program Counter"].write(address)
 					self._increment_cycle_count(2)
 					
@@ -361,7 +364,7 @@ class SEL810CPU():
 					self._increment_pc(2)
 
 				elif op.nmemonic == "SNS":
-					if self.registers["Control Switches"].read() & (1 << (op.fields["unit"] & 0x0f): #SNS is an input instruction, "unit" field is bitfield
+					if self.registers["Control Switches"].read() & (1 << (op.fields["unit"] & 0x0f)): #SNS is an input instruction, "unit" field is bitfield
 						self._increment_pc()
 					else: #if switch is NOT set, the next instruction is skipped.
 						self._increment_pc(2)
@@ -1049,11 +1052,11 @@ if __name__ == '__main__':
 
 	shell = SEL810Shell()
 	
-	telnet = ASR33OnTelnetDriver("/tmp/SEL810_asr33","127.0.0.1",9999)
+#	telnet = ASR33OnTelnetDriver("/tmp/SEL810_asr33","127.0.0.1",9999)
 	cp  = ControlPanelDriver(shell.cpu,"/tmp/SEL810_control_panel")
 	cp.start()
-	telnet.start()
+#	telnet.start()
 	shell.cmdloop()
-	telnet.stop()
+#	telnet.stop()
 	cp.stop()
 
