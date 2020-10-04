@@ -21,7 +21,7 @@ from cpuprimitives import *
 # branch instruction interaction with interrupts
 # protect features not done
 # notify hardware of the passage pf time in  12.8 microsecond increments?
-
+# current word address in, in ceu words for btc
 
 try:
     import readline
@@ -225,7 +225,9 @@ class SEL810CPU():
 			base = base | self.registers["VBR Register"].read() << 9
 
 		if indir:
-			base = self.ram[base].read()
+#			base = self.ram[base].read()
+			base = self._resolve_second_word_address(map)
+			
 
 		return base & MAX_MEM_SIZE
 
@@ -363,7 +365,7 @@ class SEL810CPU():
 					self._increment_pc(2)
 
 				elif op.nmemonic == "SNS":
-					if self.registers["Control Switches"].read_signed() & (1 << op.fields["unit"]):
+					if self.registers["Control Switches"].read() & (1 << (op.fields["unit"] & 0x0f): #SNS is an input instruction, "unit" field is bitfield
 						self._increment_pc()
 					else: #if switch is NOT set, the next instruction is skipped.
 						self._increment_pc(2)

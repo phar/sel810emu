@@ -89,6 +89,7 @@ SEL810_OPCODES = {	"LAA":(SEL810_MREF_OPCODE,		OBJOP_MEMREF_LOAD,	0o01,	0,		Fals
 					"LCS":(SEL810_AUGMENTED_OPCODE,	OBJOP_DIRECT_LOAD,	0,		0o31,	False,	SEL_OPTION_NONE),
 					"SNO":(SEL810_AUGMENTED_OPCODE,	OBJOP_DIRECT_LOAD,	0,		0o32,	False,	SEL_OPTION_NONE),
 					"NOP":(SEL810_AUGMENTED_OPCODE,	OBJOP_DIRECT_LOAD,	0,		0o33,	False,	SEL_OPTION_NONE),
+					
 					"CNS":(SEL810_AUGMENTED_OPCODE,	OBJOP_DIRECT_LOAD,	0,		0o34,	False,	SEL_OPTION_NONE),
 					"TOI":(SEL810_AUGMENTED_OPCODE,	OBJOP_DIRECT_LOAD,	0,		0o35,	False,	SEL_OPTION_NONE),
 					"LOB":(SEL810_AUGMENTED_OPCODE,	OBJOP_DIRECT_LOAD,	0,		0o36,	True,	SEL_OPTION_NONE),
@@ -110,11 +111,12 @@ SEL810_OPCODES = {	"LAA":(SEL810_MREF_OPCODE,		OBJOP_MEMREF_LOAD,	0o01,	0,		Fals
 #					"TAP":(SEL810_AUGMENTED_OPCODE,	OBJOP_DIRECT_LOAD,	0,		0oxx,	False,	SEL_OPTION_PROTECT_AND_TRAP_MEM | SEL_OPTION_VBR), #Transfer Protect Register to B-Accurnulator
 					"CEU":(SEL810_IO_OPCODE,		OBJOP_DIRECT_LOAD,	0o13,	0o00,	True,	SEL_OPTION_NONE),
 					"TEU":(SEL810_IO_OPCODE,		OBJOP_DIRECT_LOAD,	0o13,	0o01,	True,	SEL_OPTION_NONE),
-					"SNS":(SEL810_IO_OPCODE,		OBJOP_DIRECT_LOAD,	0o13,	0o04,	False,	SEL_OPTION_NONE),
+					"SNS":(SEL810_IO_OPCODE,		OBJOP_DIRECT_LOAD,	0o13,	0o02,	False,	SEL_OPTION_NONE),
+#appears to be a unused opcode
+					"AOP":(SEL810_IO_OPCODE,		OBJOP_DIRECT_LOAD,	0o17,	0o00,	False,	SEL_OPTION_NONE),
 					"AIP":(SEL810_IO_OPCODE,		OBJOP_DIRECT_LOAD,	0o17,	0o01,	False,	SEL_OPTION_NONE),
 					"MOP":(SEL810_IO_OPCODE,		OBJOP_DIRECT_LOAD,	0o17,	0o02,	True,	SEL_OPTION_NONE),
 					"MIP":(SEL810_IO_OPCODE,		OBJOP_DIRECT_LOAD,	0o17,	0o03,	False,	SEL_OPTION_NONE),
-					"AOP":(SEL810_IO_OPCODE,		OBJOP_DIRECT_LOAD,	0o17,	0o00,	False,	SEL_OPTION_NONE),
 					"PID":(SEL810_INT_OPCODES,		OBJOP_DIRECT_LOAD,	0o13,	0o0601,	True,	SEL_OPTION_NONE), #fixme
 					"PIE":(SEL810_INT_OPCODES,		OBJOP_DIRECT_LOAD,	0o13,	0o0600,	True,	SEL_OPTION_NONE)}#fixme
 
@@ -1067,14 +1069,15 @@ class SEL810_ASSEMBLER():
 # BES
 
 if __name__ == '__main__':
-	asm = SEL810_ASSEMBLER(sys.argv[1]) #sel810asm/asm/HELLO_WORLD.ASM")#("sel810asm/asm/CLT4_V1.ASM")#("sel810asm/asm/boot.asm")
-	asm.build_symbols()
-	print(asm.macros)
-	asm.build_constants()
-	asm.build_executable()
-	print(asm.symbols)
-	asm.write_symbols()
+#	asm = SEL810_ASSEMBLER(sys.argv[1]) #sel810asm/asm/HELLO_WORLD.ASM")#("sel810asm/asm/CLT4_V1.ASM")#("sel810asm/asm/boot.asm")
+#	asm.build_symbols()
+#	print(asm.macros)
+#	asm.build_constants()
+#	asm.build_executable()
+#	print(asm.symbols)
+#	asm.write_symbols()
+
 #	for i in range(65535):
-#		op = SELOPCODE(opcode=i)
-#		print(op.pack_asm())
+	op = SELOPCODE(opcode=0o130400)
+	print(op.pack_asm())
 
