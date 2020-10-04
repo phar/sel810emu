@@ -19,7 +19,6 @@ SEL810_INT_OPCODES 			= 4
 SEL810_BARE_VALUE			= 5
 SEL810_DAC_VALUE 			= 6
 SEL810_ZZZ_OPCODE 			= 7
-SEL810_SENSE_SWITCHES			= 8
 
 SEL810_PSEUDO_OPCODE 		= -1
 
@@ -216,11 +215,8 @@ DECOMPOSE_BIN_STYLE = [
 						OrderedDict([("opcode",(0,4)),
 									("discard",(4,5)),
 									("i",(5,6)),
-									("operand",(6,16))]),
+									("operand",(6,16))])]
 
-						#SEL810_SENSE_SWITCHES
-						OrderedDict([("opcode",(0,10)),
-									("switches",(10,16))])]
 
 
 

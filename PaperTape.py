@@ -24,7 +24,7 @@ class PaperTapeReaderPunch(ExternalUnitHandler):
 
 class PaperTapeDriver():
 	def __init__(self, devicenode, input_tape=None,output_tape=None):
-		self.thread = threading.Thread(target=self.paper_tape_thread, args=(devicenode,input_tape))
+		self.thread = threading.Thread(target=self.paper_tape_thread, args=(devicenode,self.filename))
 		self.done = False
 		self.ifile = None
 		self.ofile = None
@@ -39,7 +39,7 @@ class PaperTapeDriver():
 			self.ofile = open(self.output_tape,"wb")
 
 		self.bytesdone = 0
-		self.peripheral = PaperTapeReaderPunch(devicenode,chardev=True)
+		self.peripheral = PaperTapeReaderPunch(socketname,chardev=True)
 
 
 	def start(self):
@@ -54,18 +54,18 @@ class PaperTapeDriver():
 		self.ofile.close()
 
 	def paper_tape_thread(self, socketname, filename):
-		print("started paper tape driver with file %s" % filename)
+		print("started paper tape driver with file %s" % self.file)
 
 		while self.peripheral.connected:
 			if not self.peripheral.pollwrite(): #throttle the data so we dont just dump the file into the fifo
 				if self.input_tape:
 					self.peripheral.event("in")
-					self.peripheral.write(ord(self.ifile.read(1)))
+					self.peripheral.write(self.ifile.read(1))
 					self.bytesdone += 1
 					if self.bytesdone == self.ifilesize: #exit when the last byte is sent
 						self.done = True
 						
-			if self.peripheral.pollread(): #it wrote data to us
+			if e.pollread(): #it wrote data to us
 				if self.output_tape:
 					self.peripheral.event("out")
 					self.ofile.write(e.read())
@@ -73,6 +73,7 @@ class PaperTapeDriver():
 								
 
 if __name__ == '__main__':
+	raise "i have not so much as bothered to test this"
 	try:
 		(infile,outfile) = sys.argv[1:3]
 	except:
@@ -82,7 +83,7 @@ if __name__ == '__main__':
 	a = PaperTapeDriver("/tmp/SEL810_paper_tape",infile,outfile)
 	a.start()
 	while(not a.done):
-		print("%.2f percent complete" % ((a.bytesdone/ a.ifilesize) * 100))
+		print("%.2f percent complete" % (a.bytesdone/ self.filesize) * 100)
 		time.sleep(5)
 		
 	self.peripheral.connected = False

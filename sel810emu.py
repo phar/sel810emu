@@ -225,11 +225,7 @@ class SEL810CPU():
 			base = base | self.registers["VBR Register"].read() << 9
 
 		if indir:
-			indirect_word = self.ram[base].read()
-			indir = (indirect_word & 0x4000) > 0
-			idx = (indirect_word & 0x8000) > 0
-			addr = (indirect_word & 0x3fff)
-			base = self._resolve_address(addr,0,indir,idx)
+			base = self.ram[base].read()
 
 		return base & MAX_MEM_SIZE
 
@@ -252,7 +248,6 @@ class SEL810CPU():
 					self._increment_pc()
 
 				elif op.nmemonic == "STA":
-					print("writing",self.registers["A Register"].read(),"to",address)
 					self.ram[address].write(self.registers["A Register"].read())
 					self._increment_cycle_count(2)
 					self._increment_pc()
@@ -368,7 +363,7 @@ class SEL810CPU():
 					self._increment_pc(2)
 
 				elif op.nmemonic == "SNS":
-					if self.registers["Control Switches"].read_signed() & (1 << op.fields["switches"]):
+					if self.registers["Control Switches"].read_signed() & (1 << op.fields["unit"]):
 						self._increment_pc()
 					else: #if switch is NOT set, the next instruction is skipped.
 						self._increment_pc(2)
