@@ -198,42 +198,47 @@ class SEL810CPU():
 				self.latch["stall"] = True
 		
 	def get_current_map_addr(self):
-		return  self.registers["Program Counter"].read() & 0xfc00
+		return  self.registers["Program Counter"].read() & 0xfe00
+		
+		
+	def _resolve_address(self,base,map=False,indir=False,index=False):
 	
-	def _resolve_indirect_address_word(self,word):
-		indir = (word & 0x4000) > 0
-		idx = (word & 0x8000) > 0
-		addr = (word & 0x3fff)
-		return self._resolve_address(addr,map,indir,idx)
-
-	def _resolve_second_word_address(self,map):
-		return  self._resolve_indirect_address_word(self.ram[self._next_pc()].read())
-	
-	def _resolve_address(self,base,map=0,indir=False,index=0):
 		if map:
-			base = base + self.get_current_map_addr()
+			base += self.get_current_map_addr()
 	
 		if index:
-			if self.latch["index_pointer"]:
-				base = base + self.registers["Index Register"].read()
+			if (self.hwoptions & SEL_OPTION_HW_INDEX) and self.latch["index_pointer"]: #index pointer only exists if they have ine hw index option
+				base += self.registers["Index Register"].read()
 			else:
-				base = base + self.registers["B Register"].read()
+				base += self.registers["B Register"].read()
 				
 		elif not map and self.hwoptions & SEL_OPTION_VBR: # Whenever the MAP and index bits of an instruction are set to logical zero, the contents of the VBR are treated as the most significant bits of, and appended to, the nine-bit operand address.
-			base = base | self.registers["VBR Register"].read() << 9
-
+			base |= (self.registers["VBR Register"].read() << 9)
+			
 		if indir:
-			base = resolve_indirect_address_word(self.ram[base].read())
+			base = self.ram[base].read()
 
 		return base & MAX_MEM_SIZE
 
-			
+
+	def _resolve_second_word_address(self,word):
+		indir = (word & 0x4000) > 0
+		idx = (word & 0x8000) > 0
+		addr = (word & 0x3fff)
+		return self._resolve_address(addr,map=False,indir,idx)
+	
+	def _resolve_opcode_memref(self,base,word2,map=0,indir=False,index=0):
+		if indir: # A "1" in bit position 5 means that word 2 of this instruction contains the address of the data (in indirect address mode).
+			return self._resolve_second_word_address(word2)
+		else: #A "0" means that word 2 contains the data itself. These two conditions are referred to as the IMMEDIATE mode and the ADDRESS mode
+			return self._resolve_address(word2,map,0,index)
+
 	def panelswitch_step_pos_edge(self):
 		op  = SELOPCODE(opcode=self.registers["Instruction"].read())
 		if (SEL810_OPCODES[op.nmemonic][5] & SEL_OPTION_HW_INDEX) == SEL810_OPCODES[op.nmemonic][5]:
 			if op.nmemonic in SEL810_OPCODES:
 				if "address" in op.fields:
-					address = self._resolve_address(op.fields["address"], op.fields["m"],op.fields["i"],op.fields["x"])
+					address = self._resolve_opcode_memref(op.fields["address"], self.ram[self._next_pc()].read(), op.fields["m"],op.fields["i"],op.fields["x"],)
 				
 				if op.nmemonic == "LAA":
 					self.registers["A Register"].write(self.ram[address].read())
