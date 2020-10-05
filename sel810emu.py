@@ -238,7 +238,7 @@ class SEL810CPU():
 		if (SEL810_OPCODES[op.nmemonic][5] & SEL_OPTION_HW_INDEX) == SEL810_OPCODES[op.nmemonic][5]:
 			if op.nmemonic in SEL810_OPCODES:
 				if "address" in op.fields:
-					address = self._resolve_opcode_memref(op.fields["address"], self.ram[self._next_pc()].read(), op.fields["m"],op.fields["i"],op.fields["x"],)
+					address = self._resolve_opcode_memref(op.fields["address"], self.ram[self._next_pc()].read(), op.fields["m"],op.fields["i"],op.fields["x"])
 				
 				if op.nmemonic == "LAA":
 					self.registers["A Register"].write(self.ram[address].read())
@@ -328,11 +328,11 @@ class SEL810CPU():
 					self._increment_pc()
 							 
 				elif op.nmemonic == "CEU":
-					if op.fields["i"]:
-						val = self._resolve_second_word_address(op.fields["m"])
-					else:
-						val  = self.ram[self._next_pc()].read_signed()
-						
+#					if op.fields["i"]:
+					val = self._resolve_second_word_address(op.fields["m"])
+#					else:
+#						val  = self.ram[self._next_pc()].read_signed()
+
 					if op.fields["unit"] not in self.external_units:
 						eu = self.external_units[0]
 					else:
@@ -347,10 +347,10 @@ class SEL810CPU():
 					self._increment_pc(2)
 
 				elif op.nmemonic == "TEU":
-					if op.fields["i"]:
-						val = self._resolve_second_word_address(op.fields["m"])
-					else:
-						val  = self.ram[self._next_pc()].read_signed()
+#					if op.fields["i"]:
+					val = self._resolve_second_word_address(op.fields["m"])
+#					else:
+#						val  = self.ram[self._next_pc()].read_signed()
 						
 					if op.fields["unit"] not in self.external_units:
 						eu = self.external_units[0]
