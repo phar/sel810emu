@@ -930,7 +930,7 @@ class SEL810Shell(cmd.Cmd):
 
 	def do_toggle_run_stop(self, arg):
 		'execute until a halt is recieved'
-		self.cpu.run()
+		self.cpu.latch["halt"] = False
 
 	def do_load(self, arg):
 		'load a binary file into memory at an address load [address] [filename]'
