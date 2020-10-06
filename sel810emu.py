@@ -199,43 +199,48 @@ class SEL810CPU():
 		
 	def get_current_map_addr(self):
 		return  self.registers["Program Counter"].read() & 0xfe00
-	
-	def _resolve_indirect_address_word(self,word):
+		
+	def _resolve_address(self,base,map=False,indir=False,index=False):
+
+		if map:
+			base += self.get_current_map_addr()
+
+		if index:
+			if (self.hwoptions & SEL_OPTION_HW_INDEX) and self.latch["index_pointer"]: #index pointer only exists if they have ine hw index option
+				base += self.registers["Index Register"].read()
+			else:
+				base += self.registers["B Register"].read()
+				
+		elif not map and self.hwoptions & SEL_OPTION_VBR: # Whenever the MAP and index bits of an instruction are set to logical zero, the contents of the VBR are treated as the most significant bits of, and appended to, the nine-bit operand address.
+			base |= (self.registers["VBR Register"].read() << 9)
+
+		if indir:  # A "1" in bit position 5 means that word 2 of this instruction contains the address of the data (in indirect address mode).
+			base = self.ram[base].read()
+		 #A "0" means that word 2 contains the data itself. These two conditions are referred to as the IMMEDIATE mode and the ADDRESS mode
+		return base & MAX_MEM_SIZE
+
+
+	def _resolve_second_word_address(self,word):
 		indir = (word & 0x4000) > 0
 		idx = (word & 0x8000) > 0
 		addr = (word & 0x3fff)
-		map = 0
-		return self._resolve_address(addr,map,indir,idx)
-
-	def _resolve_second_word_address(self,map):
-		return  self._resolve_indirect_address_word(self.ram[self._next_pc()].read())
+		return self._resolve_address(addr,False,indir,idx)
 	
-	def _resolve_address(self,base,map=0,indir=False,index=0):
-		if map:
-			base = base + self.get_current_map_addr()
-#			print("resolving map",get_current_map_addr(),"new base",base)
-	
-		if index:
-			if self.latch["index_pointer"]:
-				base = base + self.registers["Index Register"].read()
-			else:
-				base = base + self.registers["B Register"].read()
-				
-		elif not map and self.hwoptions & SEL_OPTION_VBR: # Whenever the MAP and index bits of an instruction are set to logical zero, the contents of the VBR are treated as the most significant bits of, and appended to, the nine-bit operand address.
-			base = base | self.registers["VBR Register"].read() << 9
-#			print("HIT VBR")
-		if indir:
-			base = self._resolve_indirect_address_word(self.ram[base].read())
-
-		return base & MAX_MEM_SIZE
-
-			
+	def _is_overflow(self, value):
+		if val > POS_FULL_SCALE:
+			return True
+		elif val < NEG_FULL_SCALE:
+			return True
+		else:
+			return False
+		
 	def panelswitch_step_pos_edge(self):
 		op  = SELOPCODE(opcode=self.registers["Instruction"].read())
 		if (SEL810_OPCODES[op.nmemonic][5] & SEL_OPTION_HW_INDEX) == SEL810_OPCODES[op.nmemonic][5]:
 			if op.nmemonic in SEL810_OPCODES:
 				if "address" in op.fields:
 					address = self._resolve_address(op.fields["address"], op.fields["m"],op.fields["i"],op.fields["x"])
+					print("address",address)
 				
 				if op.nmemonic == "LAA":
 					self.registers["A Register"].write(self.ram[address].read())
@@ -258,22 +263,27 @@ class SEL810CPU():
 					self._increment_pc()
 
 				elif op.nmemonic == "AMA": ##CARRY
-					if (self.registers["A Register"].read_signed() + self.ram[address].read_signed() + self.latch["carry"]) > 0x7fff:
-						self.latch["overflow"] = True
+#					if (self.registers["A Register"].read_signed() + self.ram[address].read_signed() + self.latch["carry"]) > 0x7fff:
+#						self.latch["overflow"] = True
+						
+					self.latch["overflow"] = self._is_overflow(self.registers["A Register"].read_signed() + self.ram[address].read_signed() + self.latch["carry"])
+					
 					self.registers["A Register"].write (self.registers["A Register"].read_signed() + self.ram[address].read_signed())
 					self._increment_cycle_count(2)
 					self._increment_pc()
 
 				elif op.nmemonic == "SMA": #CARRY
-					if (self.registers["A Register"].read_signed() - self.ram[address].read_signed()) < 0:
-						self.latch["overflow"] = True
+#					if (self.registers["A Register"].read_signed() - self.ram[address].read_signed()) < 0:
+#						self.latch["overflow"] = True
+					self.latch["overflow"] = self._is_overflow(self.registers["A Register"].read_signed() - self.ram[address].read_signed())
 					self.registers["A Register"].write_signed(self.registers["A Register"].read_signed() - self.ram[address].read_signed() - self.latch["carry"])
 					self._increment_cycle_count(2)
 					self._increment_pc()
 
 				elif op.nmemonic == "MPY":
-					if self.registers["A Register"].read_signed() * self.ram[address].read_signed() < 0:
-						self.latch["overflow"] = True
+#					if self.registers["A Register"].read_signed() * self.ram[address].read_signed() < 0:
+#						self.latch["overflow"] = True
+					self.latch["overflow"] = self._is_overflow(self.registers["A Register"].read_signed() * self.ram[address].read_signed())
 					self.registers["A Register"].write_signed(self.registers["A Register"].read_signed() * self.ram[address].read_signed())
 					self._increment_cycle_count(6)
 					self._increment_pc()
@@ -297,7 +307,7 @@ class SEL810CPU():
 					self._increment_cycle_count(2)
 					
 				elif op.nmemonic == "SPB":
-					self.ram[address].write_signed(self._next_pc())
+					self.ram[address].write(self._next_pc())
 					self.registers["Program Counter"].write(address)
 					self._increment_cycle_count(2)
 					self._increment_pc()
@@ -319,18 +329,16 @@ class SEL810CPU():
 					self._increment_pc()
 
 				elif op.nmemonic == "AMB":
-					if  (self.registers["B Register"].read_signed() + self.ram[address].read_signed()) > 0x7fff:
-						self.latch["overflow"] = True
+#					if  (self.registers["B Register"].read_signed() + self.ram[address].read_signed()) > 0x7fff:
+#						self.latch["overflow"] = True
+					self.latch["overflow"] = self._is_overflow(self.registers["B Register"].read_signed() + self.ram[address].read_signed())
 					self.registers["B Register"].write_signed(self.registers["B Register"].read_signed() + self.ram[address].read_signed())
 					self._increment_cycle_count(2)
 					self._increment_pc()
 							 
 				elif op.nmemonic == "CEU":
-					if op.fields["i"]:
-						val = self._resolve_second_word_address(op.fields["m"])
-					else:
-						val  = self.ram[self._next_pc()].read_signed()
-						
+					val  = self.ram[self._resolve_second_word_address(self.ram[self._next_pc].read())].read()
+
 					if op.fields["unit"] not in self.external_units:
 						eu = self.external_units[0]
 					else:
@@ -345,10 +353,7 @@ class SEL810CPU():
 					self._increment_pc(2)
 
 				elif op.nmemonic == "TEU":
-					if op.fields["i"]:
-						val = self._resolve_second_word_address(op.fields["m"])
-					else:
-						val  = self.ram[self._next_pc()].read_signed()
+					val  = self.ram[self._resolve_second_word_address(self.ram[self._next_pc].read())].read()
 						
 					if op.fields["unit"] not in self.external_units:
 						eu = self.external_units[0]
@@ -414,7 +419,7 @@ class SEL810CPU():
 
 					if eu.unit_ready("r") or op.fields["wait"]:
 						self._increment_cycle_count()
-						self.ram[self._resolve_second_word_address(op.fields["m"])].write(eu.unit_read())
+						self.ram[self._resolve_second_word_address(self.ram[self._next_pc].read())].write(eu.unit_read())
 						
 					else:
 						self._increment_pc() #skip
@@ -432,7 +437,7 @@ class SEL810CPU():
 						self._increment_cycle_count(1)
 
 						if op.fields["i"]: #address
-							eu.unit_write(self.ram[self._resolve_second_word_address(op.fields["m"])].read())
+							eu.unit_write(self.ram[self._resolve_second_word_address(self.ram[self._next_pc].read())].read())
 							self._increment_cycle_count()
 						else: #immediate
 							eu.unit_write(self.ram[self._next_pc()].read())
@@ -449,15 +454,16 @@ class SEL810CPU():
 
 				elif op.nmemonic == "RNA":
 					if self.registers["B Register"].read() & 0x4000:
-						if (self.registers["A Register"].read_signed() + 1) > 0x7fff:
-							self.latch["overflow"] = True
+#						if (self.registers["A Register"].read_signed() + 1) > 0x7fff:
+#							self.latch["overflow"] = True
+						self.latch["overflow"] = self._is_overflow(self.registers["A Register"].read_signed() + 1)
 						self.registers["A Register"].write_signed(self.registers["A Register"].read_signed() + 1)
 					self._increment_cycle_count(1)
 					self._increment_pc()
 
 				elif op.nmemonic == "NEG": #fixme "carry"
 					self.registers["A Register"].write_signed(self.registers["A Register"].read()) #twoscomplement applied on write()
-					if self.registers["A Register"].read_signed() == MINUS_FULL_SCALE: #"minus full scale"
+					if self.registers["A Register"].read_signed() == NEG_FULL_SCALE: #"minus full scale"
 						self.latch["overflow"] = True
 					self._increment_cycle_count()
 					self._increment_pc()
@@ -615,7 +621,7 @@ class SEL810CPU():
 					self._increment_cycle_count(1)
 					self._increment_pc()
 
-				elif op.nmemonic == "SNO": #If bit Al does not equal bit AO of the A~Accurnulator, the next instruction is skipped
+				elif op.nmemonic == "SNO": #If bit A1 does not equal bit AO of the A~Accurnulator, the next instruction is skipped
 					if(self.registers["A Register"].read() & 0x0001) != ((self.registers["A Register"].read() * 0x0002) >> 1):
 						self._increment_pc()
 					self._increment_cycle_count(1)
@@ -654,7 +660,7 @@ class SEL810CPU():
 
 				elif op.nmemonic == "STX": #
 					if op.fields["i"]: #address
-						self.ram[self._resolve_second_word_address(op.fields["m"])].write(self.registers["Index Register"])
+						self.ram[self._resolve_second_word_address(self.ram[self._next_pc].read())].write(self.registers["Index Register"])
 						self._increment_cycle_count()
 					else: #immediate
 						self.ram[self._next_pc()].write(self.registers["Index Register"])
@@ -693,7 +699,7 @@ class SEL810CPU():
 
 				elif op.nmemonic == "LIX":
 					if op.fields["i"]: #address
-						self.registers["Index Register"].write(self.ram[self._resolve_second_word_address(op.fields["m"])].read())
+						self.registers["Index Register"].write(self.ram[self._resolve_second_word_address(self.ram[self._next_pc].read())].read())
 						self._increment_cycle_count()
 					else: #immediate
 						self.registers["Index Register"] = self.ram[self._next_pc()].read()
@@ -818,7 +824,6 @@ class SEL810CPU():
 
 
 def parse_inputint(val):
-	print("test",val)
 	try:
 		val = val.strip()
 		if val[0] == "'": #octal

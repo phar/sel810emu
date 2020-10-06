@@ -1,7 +1,8 @@
 
 
 CPU_HERTZ = 572000 #changing this number does not make the CPU go faster
-MINUS_FULL_SCALE = -32767 #according to the internets
+NEG_FULL_SCALE = -32767 #according to the internets
+POS_FULL_SCALE = 32767
 
 IDLE_UPDATE_MILLISECONDS = 64#number of milliseconds between updates to the controlpanel with no change on the bus
 
