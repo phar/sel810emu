@@ -200,12 +200,12 @@ class SEL810CPU():
 	def get_current_map_addr(self):
 		return  self.registers["Program Counter"].read() & 0xfe00
 		
-		
 	def _resolve_address(self,base,map=False,indir=False,index=False):
-	
+
 		if map:
 			base += self.get_current_map_addr()
-	
+			map = 0
+
 		if index:
 			if (self.hwoptions & SEL_OPTION_HW_INDEX) and self.latch["index_pointer"]: #index pointer only exists if they have ine hw index option
 				base += self.registers["Index Register"].read()
@@ -217,6 +217,9 @@ class SEL810CPU():
 
 		if indir:  # A "1" in bit position 5 means that word 2 of this instruction contains the address of the data (in indirect address mode).
 			base = self.ram[base].read()
+			indir = (base & 0x4000) > 0
+			index = (base & 0x8000) > 0
+			base = self._resolve_address(base, 0, indir, index)
 		 #A "0" means that word 2 contains the data itself. These two conditions are referred to as the IMMEDIATE mode and the ADDRESS mode
 		return base & MAX_MEM_SIZE
 
@@ -228,9 +231,9 @@ class SEL810CPU():
 		return self._resolve_address(addr,False,indir,idx)
 	
 	def _is_overflow(self, value):
-		if val > POS_FULL_SCALE:
+		if value > POS_FULL_SCALE:
 			return True
-		elif val < NEG_FULL_SCALE:
+		elif value < NEG_FULL_SCALE:
 			return True
 		else:
 			return False
@@ -303,6 +306,7 @@ class SEL810CPU():
 				elif op.nmemonic == "BRU":
 					#fixme When the TOI and BRU indirect (or LOB) instructions are executed following the interrupt subroutine, the protect latch is returned to the status present a t the time the interrupt occurred.
 					#If the Program Protect and Instruction Trap option is in- cluded (and the Protect Mode switch is ON), when the BRU indirect instruction is executed following a TOI instruction to exit from a priority interrupt routine, bits 2 through 15 of the effective address replace the contents of program counter, and the Protect Latch is set to the state of bit "0" of the effec- tive address.
+#					print("BRU",address)
 					self.registers["Program Counter"].write(address)
 					self._increment_cycle_count(2)
 					
@@ -337,7 +341,7 @@ class SEL810CPU():
 					self._increment_pc()
 							 
 				elif op.nmemonic == "CEU":
-					val  = self.ram[self._resolve_second_word_address(self.ram[self._next_pc].read())].read()
+					val  = self.ram[self._resolve_second_word_address(self.ram[self._next_pc()].read())].read()
 
 					if op.fields["unit"] not in self.external_units:
 						eu = self.external_units[0]
@@ -935,7 +939,7 @@ class SEL810Shell(cmd.Cmd):
 
 	def do_toggle_run_stop(self, arg):
 		'execute until a halt is recieved'
-		self.cpu.run()
+		self.cpu.latch["halt"] = False
 
 	def do_load(self, arg):
 		'load a binary file into memory at an address load [address] [filename]'
@@ -1057,11 +1061,11 @@ if __name__ == '__main__':
 
 	shell = SEL810Shell()
 	
-	telnet = ASR33OnTelnetDriver("/tmp/SEL810_asr33","127.0.0.1",9999)
+#	telnet = ASR33OnTelnetDriver("/tmp/SEL810_asr33","127.0.0.1",9999)
 	cp  = ControlPanelDriver(shell.cpu,"/tmp/SEL810_control_panel")
 	cp.start()
-	telnet.start()
+#	telnet.start()
 	shell.cmdloop()
-	telnet.stop()
+#	telnet.stop()
 	cp.stop()
 
