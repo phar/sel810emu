@@ -204,6 +204,7 @@ class SEL810CPU():
 
 		if map:
 			base += self.get_current_map_addr()
+			map = 0
 
 		if index:
 			if (self.hwoptions & SEL_OPTION_HW_INDEX) and self.latch["index_pointer"]: #index pointer only exists if they have ine hw index option
@@ -216,6 +217,9 @@ class SEL810CPU():
 
 		if indir:  # A "1" in bit position 5 means that word 2 of this instruction contains the address of the data (in indirect address mode).
 			base = self.ram[base].read()
+			indir = (base & 0x4000) > 0
+			index = (base & 0x8000) > 0
+			base = self._resolve_address(base, 0, indir, index)
 		 #A "0" means that word 2 contains the data itself. These two conditions are referred to as the IMMEDIATE mode and the ADDRESS mode
 		return base & MAX_MEM_SIZE
 
@@ -227,9 +231,9 @@ class SEL810CPU():
 		return self._resolve_address(addr,False,indir,idx)
 	
 	def _is_overflow(self, value):
-		if val > POS_FULL_SCALE:
+		if value > POS_FULL_SCALE:
 			return True
-		elif val < NEG_FULL_SCALE:
+		elif value < NEG_FULL_SCALE:
 			return True
 		else:
 			return False
@@ -337,7 +341,7 @@ class SEL810CPU():
 					self._increment_pc()
 							 
 				elif op.nmemonic == "CEU":
-					val  = self.ram[self._resolve_second_word_address(self.ram[self._next_pc].read())].read()
+					val  = self.ram[self._resolve_second_word_address(self.ram[self._next_pc()].read())].read()
 
 					if op.fields["unit"] not in self.external_units:
 						eu = self.external_units[0]
