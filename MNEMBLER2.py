@@ -268,7 +268,7 @@ def decompose_asm(l):
 	had_quotes = False
 	if len(l):
 		if l[0] == "*":
-			return {"label":None,"ismacro":ismacroinst,"nmemonic":None, "indirect":None, "args":[], "comment":None}
+			return {"label":None,"ismacro":ismacroinst,"mnemonic":None, "indirect":None, "args":[], "comment":None}
 			
 		if len(l) > 5:
 			if l[4] == "M":
@@ -327,16 +327,16 @@ def decompose_asm(l):
 			addridx = ""
 		
 		if had_quotes:
-			return {"label":label,"ismacro":ismacroinst,"nmemonic":op, "indirect":indirect_bit, "args":[addridx], "comment":comment}
+			return {"label":label,"ismacro":ismacroinst,"mnemonic":op, "indirect":indirect_bit, "args":[addridx], "comment":comment}
 		else:
-			return {"label":label,"ismacro":ismacroinst,"nmemonic":op, "indirect":indirect_bit, "args":addridx.split(","), "comment":comment}
+			return {"label":label,"ismacro":ismacroinst,"mnemonic":op, "indirect":indirect_bit, "args":addridx.split(","), "comment":comment}
 	else:
-		return {"label":None,"ismacro":ismacroinst,"nmemonic":None, "indirect":None, "args":[], "comment":None}
+		return {"label":None,"ismacro":ismacroinst,"mnemonic":None, "indirect":None, "args":[], "comment":None}
 
 class SELOPCODE(dict):
 	def __init__(self,asm=None, opcode=None, flags = {}):
 		self.label =  None
-		self.nmemonic = ""
+		self.mnemonic = ""
 		self.ispseudo_opcode = True
 		self.data = None
 		self.symbols = {}
@@ -377,39 +377,39 @@ class SELOPCODE(dict):
 			else:
 				peekdict[n] = int(bits[v[0]:v[1]],2)
 
-		tempnmemonic = self._get_nmemonic(peekdict["opcode"])
+		tempmnemonic = self._get_mnemonic(peekdict["opcode"])
 	
-		if "augmentcode" in  DECOMPOSE_BIN_STYLE[SEL810_OPCODES[tempnmemonic][0]]: #catches opcodes that are different based on their augment code
+		if "augmentcode" in  DECOMPOSE_BIN_STYLE[SEL810_OPCODES[tempmnemonic][0]]: #catches opcodes that are different based on their augment code
 			peekdict = {}
-			for n,v in DECOMPOSE_BIN_STYLE[SEL810_OPCODES[tempnmemonic][0]].items():
+			for n,v in DECOMPOSE_BIN_STYLE[SEL810_OPCODES[tempmnemonic][0]].items():
 				peekdict[n] = int(bits[v[0]:v[1]],2)
 
-			self.nmemonic = self._get_nmemonic(peekdict["opcode"],peekdict["augmentcode"])
+			self.mnemonic = self._get_mnemonic(peekdict["opcode"],peekdict["augmentcode"])
 		else:
-			self.nmemonic = self._get_nmemonic(peekdict["opcode"])
+			self.mnemonic = self._get_mnemonic(peekdict["opcode"])
 
-		if self.nmemonic != None:
+		if self.mnemonic != None:
 			try:
-				self.field_spec =  DECOMPOSE_BIN_STYLE[SEL810_OPCODES[self.nmemonic][1]]
-				self.set_nmemonic(self.nmemonic)
+				self.field_spec =  DECOMPOSE_BIN_STYLE[SEL810_OPCODES[self.mnemonic][1]]
+				self.set_mnemonic(self.mnemonic)
 			except:
-				print("FAIL",self.nmemonic,peekdict["opcode"])
+				print("FAIL",self.mnemonic,peekdict["opcode"])
 		
 		
 			self.fields = self._populate_fields_from_spec(self.field_spec)
-			for n,v in DECOMPOSE_BIN_STYLE[SEL810_OPCODES[self.nmemonic][0]].items():
+			for n,v in DECOMPOSE_BIN_STYLE[SEL810_OPCODES[self.mnemonic][0]].items():
 				if n in ["operand"]:
 					self.fields[n] = twoscmplment2dec(int(bits[v[0]:v[1]],2),  v[1] - v[0])
 				else:
 					self.fields[n] = int(bits[v[0]:v[1]],2)
 			self.ispseudo_opcode = False
 
-	def set_nmemonic(self,nmemonic):
-		self.nmemonic = nmemonic
+	def set_mnemonic(self,mnemonic):
+		self.mnemonic = mnemonic
 		self.fields = self._populate_fields_from_spec(self.field_spec)
 		
-		if ("opcode" in self.fields) and (nmemonic not in PSEUDO_OPCODES):
-			self.fields["opcode"] = SEL810_OPCODES[nmemonic][2]
+		if ("opcode" in self.fields) and (mnemonic not in PSEUDO_OPCODES):
+			self.fields["opcode"] = SEL810_OPCODES[mnemonic][2]
 
 	def set_asm(self,asmline):
 		self.asmparse = decompose_asm(asmline)
@@ -428,14 +428,14 @@ class SELOPCODE(dict):
 			else:
 				arg0 = None
 
-			self.set_nmemonic(ret["nmemonic"])
+			self.set_mnemonic(ret["mnemonic"])
 			
-			if ret["nmemonic"] in PSEUDO_OPCODES:
+			if ret["mnemonic"] in PSEUDO_OPCODES:
 				self.ispseudo_opcode = True
 
-				if self.nmemonic == "EQU":
+				if self.mnemonic == "EQU":
 					self.add_symbol(self.label, arg0)
-				elif self.nmemonic == "DATA":
+				elif self.mnemonic == "DATA":
 					if ret["args"][0][:2] == "\'\'":
 						self.data = parse_arg(ret["args"][0])(0,{}) #special case of a string never being symbolic, and gets me out of the corner i painted myself into'
 						self.comment = ret["args"][0]
@@ -448,13 +448,13 @@ class SELOPCODE(dict):
 							if self.comment == None:
 								self.comment = ret["args"][0]
 								
-				elif self.nmemonic == "ABS":
+				elif self.mnemonic == "ABS":
 					self.flags["address_mode"] = FLAG_ADDRESS_MODE_ABSOLUTE
 					
-				elif self.nmemonic == "REL":
+				elif self.mnemonic == "REL":
 					self.flags["address_mode"] = FLAG_ADDRESS_MODE_RELATIVE
 					
-				elif self.nmemonic == "ORG":
+				elif self.mnemonic == "ORG":
 					self.flags["org_address"] = self._resolve_to_value(arg0,0,{})
 					self.field_spec =  DECOMPOSE_OBJ_STYLE[OBJOP_SPECIAL_LOAD]
 					self.fields = self._populate_fields_from_spec(self.field_spec)
@@ -464,21 +464,21 @@ class SELOPCODE(dict):
 					self.fields["code"] = OBJ_SPECIAL_LOAD_POINT
 					self.fields["reloc"] = True
 					
-				elif self.nmemonic == "END":
+				elif self.mnemonic == "END":
 					self.flags["has_end_opcode"] = True
-				elif self.nmemonic == "NOLS":
+				elif self.mnemonic == "NOLS":
 					self.flags["supress_output"] = True
-				elif self.nmemonic == "LIST":
+				elif self.mnemonic == "LIST":
 					self.flags["supress_output"] = False
-				elif self.nmemonic == "MACR":
+				elif self.mnemonic == "MACR":
 					self.flags["in_macro_def"] = True
-				elif self.nmemonic == "EMAC":
+				elif self.mnemonic == "EMAC":
 					self.flags["in_macro_def"] = False
 					print("confirmed")
-				elif self.nmemonic == "DAC":
+				elif self.mnemonic == "DAC":
 					self.field_spec =  DECOMPOSE_BIN_STYLE[SEL810_DAC_VALUE]
 					self.fields = self._populate_fields_from_spec(self.field_spec)
-					self.set_nmemonic(ret["nmemonic"]) #hhacky
+					self.set_mnemonic(ret["mnemonic"]) #hhacky
 					if "x" in self.fields:
 						if "1" in ret["args"]:
 							self.fields["x"] = 1
@@ -488,37 +488,37 @@ class SELOPCODE(dict):
 						if arg0 is not None:
 							self.fields["operand"] = arg0
 							
-				elif self.nmemonic == "EAC":
+				elif self.mnemonic == "EAC":
 					self.data = [arg0]
 					
-				elif self.nmemonic == "BSS":
+				elif self.mnemonic == "BSS":
 					self.data = [0] * self._resolve_to_value(arg0,0,{})
 					
-				elif self.nmemonic == "BES":
+				elif self.mnemonic == "BES":
 					self.data = [0] * self._resolve_to_value(arg0,0,{})
 					pass #fixme ... label
 
-				elif self.nmemonic == "ZZZ":
+				elif self.mnemonic == "ZZZ":
 					self.field_spec =  DECOMPOSE_BIN_STYLE[SEL810_ZZZ_OPCODE]
 					self.fields = self._populate_fields_from_spec(self.field_spec)
-					self.set_nmemonic(ret["nmemonic"]) #hhacky
+					self.set_mnemonic(ret["mnemonic"]) #hhacky
 					self.fields["opcode"] = 0
 					self.fields["i"] = ret["indirect"]
 							
-				elif self.nmemonic == "***":
+				elif self.mnemonic == "***":
 					self.field_spec =  DECOMPOSE_BIN_STYLE[SEL810_ZZZ_OPCODE]
 					self.fields = self._populate_fields_from_spec(self.field_spec)
-					self.set_nmemonic(ret["nmemonic"]) #hhacky
+					self.set_mnemonic(ret["mnemonic"]) #hhacky
 					self.fields["opcode"] = 0
 					self.fields["i"] = ret["indirect"]
 				else:
-					print("unhandled", self.nmemonic)
+					print("unhandled", self.mnemonic)
 				
 			else:
 				self.ispseudo_opcode = False
-				self.field_spec = DECOMPOSE_BIN_STYLE[SEL810_OPCODES[self.nmemonic][0]]
+				self.field_spec = DECOMPOSE_BIN_STYLE[SEL810_OPCODES[self.mnemonic][0]]
 				self.fields = self._populate_fields_from_spec(self.field_spec)
-				self.set_nmemonic(ret["nmemonic"])
+				self.set_mnemonic(ret["mnemonic"])
 				
 				if ret["args"][0].strip() != "" and ret["args"][0].strip()[0] == "=":
 					arg0 = parse_arg(ret["args"][0][1:])
@@ -532,7 +532,7 @@ class SELOPCODE(dict):
 				if "i" in self.fields:
 					self.fields["i"] = ret["indirect"]
 				if "augmentcode" in self.fields:
-					self.fields["augmentcode"] = SEL810_OPCODES[self.nmemonic][3]
+					self.fields["augmentcode"] = SEL810_OPCODES[self.mnemonic][3]
 				if "operand" in self.fields and arg0 is not None:
 						self.fields["operand"] = arg0
 				if "address" in self.fields and arg0 is not None:
@@ -555,10 +555,10 @@ class SELOPCODE(dict):
 						if field in self.fields:
 							self.fields["literal"] = self.fields[field]
 				else:
-					self.fields["objop"] = SEL810_OPCODES[self.nmemonic][1]
+					self.fields["objop"] = SEL810_OPCODES[self.mnemonic][1]
 		else:
 			self.flags["in_macro_inst"] = True
-			self.set_nmemonic(ret["nmemonic"])
+			self.set_mnemonic(ret["mnemonic"])
 #			print("yup")
 
 	def _resolve_to_value(self,a, current_addr, symbols={}):
@@ -601,23 +601,23 @@ class SELOPCODE(dict):
 			return[(int("".join(binary),2))]
 			
 		else:
-			if self.nmemonic == "DATA":
+			if self.mnemonic == "DATA":
 				retarry = []
 				for i in self.data:
 					retarry.append(dec2twoscmplment(self._resolve_to_value(i,current_addr,symbols)))
 				return retarry
 					
-			elif self.nmemonic == "DAC":
+			elif self.mnemonic == "DAC":
 				binary = []
 				for n, (s,e) in self.field_spec.items():
 					bits = e - s
 					binary.append(bin(dec2twoscmplment(self._resolve_to_value(self.fields[n], current_addr, symbols)))[2:].zfill(bits))
 				return[(int("".join(binary),2))]
 				
-			elif self.nmemonic == "END":
+			elif self.mnemonic == "END":
 					return [0]
 					
-			elif self.nmemonic == "***":
+			elif self.mnemonic == "***":
 				binary = []
 				for n, (s,e) in self.field_spec.items():
 					bits = e - s
@@ -625,10 +625,10 @@ class SELOPCODE(dict):
 				return[(int("".join(binary),2))]
 				return []
 			
-			elif self.nmemonic == "BSS":
+			elif self.mnemonic == "BSS":
 				pass #fixme
 				
-			elif self.nmemonic == "BES":
+			elif self.mnemonic == "BES":
 				pass #fixme
 
 	def pack_rel(self,curr_addr=0,symbols={}):
@@ -637,7 +637,7 @@ class SELOPCODE(dict):
 			field_spec = DECOMPOSE_OBJ_STYLE[self.fields["objop"]]
 			fields = self._populate_fields_from_spec(field_spec, self.fields)
 
-			if SEL810_OPCODES[self.nmemonic][1] == OBJOP_DIRECT_LOAD:
+			if SEL810_OPCODES[self.mnemonic][1] == OBJOP_DIRECT_LOAD:
 				fields["data"] = self.pack_abs(curr_addr,symbols)[0]
 
 			binary = []
@@ -649,7 +649,7 @@ class SELOPCODE(dict):
 					binary.append(bin(dec2twoscmplment(0,bits))[2:].zfill(bits))
 			return[(int("".join(binary),2))]
 		else:
-			if self.nmemonic in ["DATA","BSS"]:
+			if self.mnemonic in ["DATA","BSS"]:
 				field_spec = DECOMPOSE_OBJ_STYLE[OBJOP_DIRECT_LOAD]
 				fields = self._populate_fields_from_spec(field_spec, self.fields)
 				fields["objop"] = OBJOP_DIRECT_LOAD
@@ -667,7 +667,7 @@ class SELOPCODE(dict):
 					retbuff.append((int("".join(binary),2)))
 				return retbuff
 				
-			elif self.nmemonic == "***":
+			elif self.mnemonic == "***":
 				field_spec = DECOMPOSE_OBJ_STYLE[OBJOP_DIRECT_LOAD]
 				fields = self._populate_fields_from_spec(field_spec, self.fields)
 						
@@ -681,7 +681,7 @@ class SELOPCODE(dict):
 				retbuff.append((int("".join(binary),2)))
 				return retbuff
 				
-			elif self.nmemonic == "ORG":
+			elif self.mnemonic == "ORG":
 				retbuff = []
 				binary = []
 				for n, (s,e) in self.field_spec.items():
@@ -690,7 +690,7 @@ class SELOPCODE(dict):
 				retbuff.append((int("".join(binary),2)))
 				return retbuff
 				
-			elif self.nmemonic == "DAC":
+			elif self.mnemonic == "DAC":
 				retbuff = []
 				binary = []
 				for n, (s,e) in self.field_spec.items():
@@ -699,7 +699,7 @@ class SELOPCODE(dict):
 				retbuff.append((int("".join(binary),2)))
 				return retbuff
 				
-			elif self.nmemonic == "EAC":
+			elif self.mnemonic == "EAC":
 				retbuff = []
 				binary = []
 				for n, (s,e) in self.field_spec.items():
@@ -708,7 +708,7 @@ class SELOPCODE(dict):
 				retbuff.append((int("".join(binary),2)))
 				return retbuff
 				
-			elif self.nmemonic == "END":
+			elif self.mnemonic == "END":
 #				retbuff = []
 #				binary = []
 #				for n, (s,e) in self.field_spec.items():
@@ -721,7 +721,7 @@ class SELOPCODE(dict):
 				
 				
 	def pack_asm(self,curr_addr=0,symbols={}):
-		if self.nmemonic != None:
+		if self.mnemonic != None:
 			l = "     "
 			if self.label:
 				if curr_addr == symbols[self.label]:
@@ -733,7 +733,7 @@ class SELOPCODE(dict):
 			args = []
 			if not self.ispseudo_opcode:
 				indir = " "
-				if self.nmemonic not in ["PID","PIE"]:
+				if self.mnemonic not in ["PID","PIE"]:
 					for field in ["operand","address","unit"]:
 						if field in self.fields:
 							if self.operand_is_constant:
@@ -753,12 +753,12 @@ class SELOPCODE(dict):
 						if self.fields["shifts"]:
 							args.append("%d" % self._resolve_to_value( self.fields["shifts"],curr_addr,symbols))
 
-				str = "%s%s%s %s" % (l,self.nmemonic,indir, ",".join(args))
+				str = "%s%s%s %s" % (l,self.mnemonic,indir, ",".join(args))
 				if self.comment:
 					str += (" " * (self.comment_space - len(str)))
 					str += "*" + self.comment
 			else:
-				if self.nmemonic == "DATA":
+				if self.mnemonic == "DATA":
 					lines = []
 					if not self.operand_is_constant:
 						if self.data:
@@ -771,7 +771,7 @@ class SELOPCODE(dict):
 									str += "%s" % l.ljust(5)
 								else:
 									str += "     "
-								str += "%s  %s" % (self.nmemonic, ",".join(args))
+								str += "%s  %s" % (self.mnemonic, ",".join(args))
 
 								if self.comment and not len(lines):
 									str += (" " * (self.comment_space - len(str)))
@@ -781,29 +781,29 @@ class SELOPCODE(dict):
 								lines.append(str)
 							return(lines)
 							
-				elif self.nmemonic == "***":
+				elif self.mnemonic == "***":
 					indir = " "
 					if "i" in self.fields:
 						if self.fields["i"]:
 							indir = "*"
-					str = "%s%s%s  %s" % (l,self.nmemonic,indir, ",".join(args))
-				elif self.nmemonic == "ORG":
+					str = "%s%s%s  %s" % (l,self.mnemonic,indir, ",".join(args))
+				elif self.mnemonic == "ORG":
 					args.append("'%o" % self._resolve_to_value(self.fields["address"],curr_addr,symbols))
-					str = "%s%s  %s" % (l,self.nmemonic, ",".join(args))
-				elif self.nmemonic == "DAC":
+					str = "%s%s  %s" % (l,self.mnemonic, ",".join(args))
+				elif self.mnemonic == "DAC":
 					args.append("'%o" % self._resolve_to_value(self.fields["operand"],curr_addr,symbols))
 					if "x" in self.fields and self.fields["x"]:
 							args.append("1")
-					str = "%s%s  %s" % (l,self.nmemonic, ",".join(args))
-				elif self.nmemonic == "EAC":
+					str = "%s%s  %s" % (l,self.mnemonic, ",".join(args))
+				elif self.mnemonic == "EAC":
 					args.append("'%o" % self._resolve_to_value(self.fields["operand"],curr_addr,symbols))
 					if "x" in self.fields and self.fields["x"]:
 							args.append("1")
-					str = "%s%s  %s" % (l,self.nmemonic, ",".join(args))
-				elif self.nmemonic == "END":
-					str = "%s%s  %s" % (l,self.nmemonic, ",".join(args))
+					str = "%s%s  %s" % (l,self.mnemonic, ",".join(args))
+				elif self.mnemonic == "END":
+					str = "%s%s  %s" % (l,self.mnemonic, ",".join(args))
 
-				elif self.nmemonic == "BSS":
+				elif self.mnemonic == "BSS":
 					lines = []
 					for d in self.data:
 						str = ""
@@ -817,10 +817,10 @@ class SELOPCODE(dict):
 						lines.append(str)
 					return lines
 
-				elif self.nmemonic == "BES":
-					str = "%s%s  %s" % (l,self.nmemonic, ",".join(args))
+				elif self.mnemonic == "BES":
+					str = "%s%s  %s" % (l,self.mnemonic, ",".join(args))
 				else:
-					str = "******!!************something bad happened" + self.nmemonic
+					str = "******!!************something bad happened" + self.mnemonic
 
 				if self.comment:
 					str += (" " * (self.comment_space - len(str)))
@@ -829,32 +829,32 @@ class SELOPCODE(dict):
 			str = "(bad opcode)"
 		return [str]
 		
-	def _get_nmemonic(self,testopcode, testaugmentcode=None):
-		for nmemonic,(type,decompose,opcode,augmentcode, second_word,hwtype) in SEL810_OPCODES.items():
+	def _get_mnemonic(self,testopcode, testaugmentcode=None):
+		for mnemonic,(type,decompose,opcode,augmentcode, second_word,hwtype) in SEL810_OPCODES.items():
 			if testopcode == opcode:
 				if testaugmentcode!=None:
 					if testaugmentcode == augmentcode:
-						return nmemonic
+						return mnemonic
 				else:
-					return nmemonic
+					return mnemonic
 
 	def get_flags(self):
 		if not self.ispseudo_opcode:
-			self.flags["has_second_word"] = SEL810_OPCODES[self.nmemonic][4]
+			self.flags["has_second_word"] = SEL810_OPCODES[self.mnemonic][4]
 		return self.flags
 		
 	def __len__(self):
 		if not self.ispseudo_opcode:
 			return 1
 		else:
-			if self.nmemonic in ["END","EQU","ORG","ABS","REL","LIST","NOLS","MACR","EMAC"]: #more
+			if self.mnemonic in ["END","EQU","ORG","ABS","REL","LIST","NOLS","MACR","EMAC"]: #more
 				return 0
-			elif self.nmemonic in  ["DATA","BSS","BES"]:
+			elif self.mnemonic in  ["DATA","BSS","BES"]:
 					return len(self.data)
-			elif self.nmemonic in ["DAC","ZZZ","***"]:
+			elif self.mnemonic in ["DAC","ZZZ","***"]:
 				return 1
 			else:
-				print(self.nmemonic)
+				print(self.mnemonic)
 
 
 class SEL810_ASSEMBLER():
@@ -913,7 +913,7 @@ class SEL810_ASSEMBLER():
 						for n in range(len(op.asmparse["args"])):
 							local_args["#%d" % (n+1)] = op.asmparse["args"][n]
 							
-						for o in self.macros[op.nmemonic]:
+						for o in self.macros[op.mnemonic]:
 							nop = SELOPCODE(o,flags=self.flags)
 							nop.constants = {} #sloppy
 
@@ -949,7 +949,7 @@ class SEL810_ASSEMBLER():
 						
 					else:
 
-						if op.nmemonic == "ORG":
+						if op.mnemonic == "ORG":
 							current_offset = 0o0000
 						
 						if inmacro == False and op.flags["in_macro_def"] == True:
@@ -981,7 +981,7 @@ class SEL810_ASSEMBLER():
 		print("building constant table")
 		current_offset = 0o0000
 		for op in self.program:
-			if op.nmemonic == "ORG":
+			if op.mnemonic == "ORG":
 				current_offset = 0o0000
 			for s,v in op.get_constants().items():
 				sv  = op._resolve_to_value(s, op.flags['org_address']+current_offset,self.symbols)
@@ -1028,7 +1028,7 @@ class SEL810_ASSEMBLER():
 		print("building executable")
 		current_offset = 0o0000
 		for op in self.program:
-			if op.nmemonic == "ORG":
+			if op.mnemonic == "ORG":
 				current_offset = 0o0000
 			v = getattr(op, opfn)(op.flags['org_address']+current_offset, self.symbols)
 			if(v):

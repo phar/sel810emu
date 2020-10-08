@@ -200,7 +200,6 @@ class SEL810CPU():
 	def get_current_map_addr(self):
 		return  self.registers["Program Counter"].read() & 0xfe00
 		
-		
 	def _resolve_address(self,base,map=False,indir=False,index=False):
 	
 		if map:
@@ -228,68 +227,60 @@ class SEL810CPU():
 		return self._resolve_address(addr,False,indir,idx)
 	
 	def _is_overflow(self, value):
-		if val > POS_FULL_SCALE:
+		if value > POS_FULL_SCALE:
 			return True
-		elif val < NEG_FULL_SCALE:
+		elif value < NEG_FULL_SCALE:
 			return True
 		else:
 			return False
 		
 	def panelswitch_step_pos_edge(self):
 		op  = SELOPCODE(opcode=self.registers["Instruction"].read())
-		if (SEL810_OPCODES[op.nmemonic][5] & SEL_OPTION_HW_INDEX) == SEL810_OPCODES[op.nmemonic][5]:
-			if op.nmemonic in SEL810_OPCODES:
+		if (SEL810_OPCODES[op.mnemonic][5] & SEL_OPTION_HW_INDEX) == SEL810_OPCODES[op.mnemonic][5]:
+			if op.mnemonic in SEL810_OPCODES:
 				if "address" in op.fields:
 					address = self._resolve_address(op.fields["address"], op.fields["m"],op.fields["i"],op.fields["x"])
 					print("address",address)
 				
-				if op.nmemonic == "LAA":
+				if op.mnemonic == "LAA":
 					self.registers["A Register"].write(self.ram[address].read())
 					self._increment_cycle_count(2)
 					self._increment_pc()
 
-				elif op.nmemonic == "LBA":
+				elif op.mnemonic == "LBA":
 					self.registers["B Register"].write(self.ram[address].read())
 					self._increment_cycle_count(2)
 					self._increment_pc()
 
-				elif op.nmemonic == "STA":
+				elif op.mnemonic == "STA":
 					self.ram[address].write(self.registers["A Register"].read())
 					self._increment_cycle_count(2)
 					self._increment_pc()
 
-				elif op.nmemonic == "STB":
+				elif op.mnemonic == "STB":
 					self.ram[address].write(self.registers["B Register"].read())
 					self._increment_cycle_count(2)
 					self._increment_pc()
 
-				elif op.nmemonic == "AMA": ##CARRY
-#					if (self.registers["A Register"].read_signed() + self.ram[address].read_signed() + self.latch["carry"]) > 0x7fff:
-#						self.latch["overflow"] = True
-						
+				elif op.mnemonic == "AMA": ##CARRY
 					self.latch["overflow"] = self._is_overflow(self.registers["A Register"].read_signed() + self.ram[address].read_signed() + self.latch["carry"])
-					
 					self.registers["A Register"].write (self.registers["A Register"].read_signed() + self.ram[address].read_signed())
 					self._increment_cycle_count(2)
 					self._increment_pc()
 
-				elif op.nmemonic == "SMA": #CARRY
-#					if (self.registers["A Register"].read_signed() - self.ram[address].read_signed()) < 0:
-#						self.latch["overflow"] = True
+				elif op.mnemonic == "SMA": #CARRY
 					self.latch["overflow"] = self._is_overflow(self.registers["A Register"].read_signed() - self.ram[address].read_signed())
-					self.registers["A Register"].write_signed(self.registers["A Register"].read_signed() - self.ram[address].read_signed() - self.latch["carry"])
+					self.registers["A Register"].write_signed(self.registers["A Register"].read_signed() - (self.ram[address].read_signed() + self.latch["carry"]))
 					self._increment_cycle_count(2)
 					self._increment_pc()
 
-				elif op.nmemonic == "MPY":
-#					if self.registers["A Register"].read_signed() * self.ram[address].read_signed() < 0:
-#						self.latch["overflow"] = True
+				elif op.mnemonic == "MPY":
 					self.latch["overflow"] = self._is_overflow(self.registers["A Register"].read_signed() * self.ram[address].read_signed())
 					self.registers["A Register"].write_signed(self.registers["A Register"].read_signed() * self.ram[address].read_signed())
 					self._increment_cycle_count(6)
 					self._increment_pc()
 
-				elif op.nmemonic == "DIV": #"OVERFLOW if the divisor is the portion of the dividend"
+				elif op.mnemonic == "DIV": #"OVERFLOW if the divisor is the portion of the dividend"
 					if  self.ram[address].read_signed() != 0: #fixme this is just my guess to overflow on divide by zero
 						a = (self.registers["A Register"].read_signed() << 16 | self.registers["B Register"].read_signed()) / self.ram[address].read_signed()
 						b = (self.registers["A Register"].read_signed() << 16 | self.registers["B Register"].read_signed()) % self.ram[address].read_signed()
@@ -300,19 +291,19 @@ class SEL810CPU():
 					self._increment_cycle_count(11)
 					self._increment_pc()
 								
-				elif op.nmemonic == "BRU":
+				elif op.mnemonic == "BRU":
 					#fixme When the TOI and BRU indirect (or LOB) instructions are executed following the interrupt subroutine, the protect latch is returned to the status present a t the time the interrupt occurred.
 					#If the Program Protect and Instruction Trap option is in- cluded (and the Protect Mode switch is ON), when the BRU indirect instruction is executed following a TOI instruction to exit from a priority interrupt routine, bits 2 through 15 of the effective address replace the contents of program counter, and the Protect Latch is set to the state of bit "0" of the effec- tive address.
 					self.registers["Program Counter"].write(address)
 					self._increment_cycle_count(2)
 					
-				elif op.nmemonic == "SPB":
+				elif op.mnemonic == "SPB":
 					self.ram[address].write(self._next_pc())
 					self.registers["Program Counter"].write(address)
 					self._increment_cycle_count(2)
 					self._increment_pc()
 
-				elif op.nmemonic == "IMS":
+				elif op.mnemonic == "IMS":
 					t = (self.ram[address].read_signed() + 1) & 0xffff
 					self.ram[address].write_signed(t)
 					if t == 0:
@@ -320,7 +311,7 @@ class SEL810CPU():
 					self._increment_cycle_count(3)
 					self._increment_pc()
 
-				elif op.nmemonic == "CMA":
+				elif op.mnemonic == "CMA":
 					if self.registers["A Register"].read_signed() == self.ram[address].read_signed():
 						self._increment_pc() #the next instruction is skipped.
 					elif self.registers["A Register"].read_signed() > self.ram[address].read_signed():
@@ -328,7 +319,7 @@ class SEL810CPU():
 					self._increment_cycle_count(3)
 					self._increment_pc()
 
-				elif op.nmemonic == "AMB":
+				elif op.mnemonic == "AMB":
 #					if  (self.registers["B Register"].read_signed() + self.ram[address].read_signed()) > 0x7fff:
 #						self.latch["overflow"] = True
 					self.latch["overflow"] = self._is_overflow(self.registers["B Register"].read_signed() + self.ram[address].read_signed())
@@ -336,8 +327,11 @@ class SEL810CPU():
 					self._increment_cycle_count(2)
 					self._increment_pc()
 							 
-				elif op.nmemonic == "CEU":
-					val  = self.ram[self._resolve_second_word_address(self.ram[self._next_pc].read())].read()
+				elif op.mnemonic == "CEU":
+					if op.fields["i"]: #address
+						val  = self._resolve_second_word_address(self.ram[self._next_pc].read())
+					else:
+						val = self.ram[self._next_pc].read()
 
 					if op.fields["unit"] not in self.external_units:
 						eu = self.external_units[0]
@@ -352,8 +346,11 @@ class SEL810CPU():
 					self._increment_cycle_count(4)
 					self._increment_pc(2)
 
-				elif op.nmemonic == "TEU":
-					val  = self.ram[self._resolve_second_word_address(self.ram[self._next_pc].read())].read()
+				elif op.mnemonic == "TEU":
+					if op.fields["i"]: #address
+						val  = self._resolve_second_word_address(self.ram[self._next_pc].read())
+					else:
+						val = self.ram[self._next_pc].read()
 						
 					if op.fields["unit"] not in self.external_units:
 						eu = self.external_units[0]
@@ -368,14 +365,14 @@ class SEL810CPU():
 					self._increment_cycle_count(4)
 					self._increment_pc(2)
 
-				elif op.nmemonic == "SNS":
+				elif op.mnemonic == "SNS":
 					if self.registers["Control Switches"].read() & (1 << (op.fields["unit"] & 0x0f)): #SNS is an input instruction, "unit" field is bitfield
 						self._increment_pc()
 					else: #if switch is NOT set, the next instruction is skipped.
 						self._increment_pc(2)
 					self._increment_cycle_count(1)
 
-				elif op.nmemonic == "AIP":
+				elif op.mnemonic == "AIP":
 					if op.fields["unit"] not in self.external_units:
 						eu = self.external_units[0]
 					else:
@@ -392,7 +389,7 @@ class SEL810CPU():
 					self._increment_cycle_count(4)
 					self._increment_pc()
 
-				elif op.nmemonic == "AOP":
+				elif op.mnemonic == "AOP":
 					if op.fields["unit"] not in self.external_units:
 						eu = self.external_units[0]
 					else:
@@ -407,7 +404,7 @@ class SEL810CPU():
 					self._increment_cycle_count(4)
 					self._increment_pc()
 
-				elif op.nmemonic == "MIP":
+				elif op.mnemonic == "MIP":
 					self.accumulator_a = ord(self.external_units[op.fields["unit"]].unit_read())
 					self._increment_pc()
 					self._increment_cycle_count(4)
@@ -419,15 +416,20 @@ class SEL810CPU():
 
 					if eu.unit_ready("r") or op.fields["wait"]:
 						self._increment_cycle_count()
-						self.ram[self._resolve_second_word_address(self.ram[self._next_pc].read())].write(eu.unit_read())
-						
+#						self.ram[self._resolve_second_word_address(self.ram[self._next_pc].read())].write(eu.unit_read())
+						if op.fields["i"]: #address
+#							eu.unit_write(self.ram[self._resolve_second_word_address(self.ram[self._next_pc].read())].read())
+							self.ram[self._resolve_second_word_address(self.ram[self._next_pc].read())].write(eu.unit_read())
+							self._increment_cycle_count()
+						else: #immediate
+							self.ram[self._next_pc()].write(eu.unit_read())
 					else:
 						self._increment_pc() #skip
 					
 					self._increment_cycle_count(4)
 					self._increment_pc()
 
-				elif op.nmemonic == "MOP":
+				elif op.mnemonic == "MOP":
 					if op.fields["unit"] not in self.external_units:
 						eu = self.external_units[0]
 					else:
@@ -448,11 +450,11 @@ class SEL810CPU():
 					self._increment_cycle_count(4)
 					self._increment_pc(2)
 
-				elif op.nmemonic == "HLT":
+				elif op.mnemonic == "HLT":
 					self.latch["halt"] = True
 					self._increment_cycle_count()
 
-				elif op.nmemonic == "RNA":
+				elif op.mnemonic == "RNA":
 					if self.registers["B Register"].read() & 0x4000:
 #						if (self.registers["A Register"].read_signed() + 1) > 0x7fff:
 #							self.latch["overflow"] = True
@@ -461,36 +463,36 @@ class SEL810CPU():
 					self._increment_cycle_count(1)
 					self._increment_pc()
 
-				elif op.nmemonic == "NEG": #fixme "carry"
+				elif op.mnemonic == "NEG": #fixme "carry"
 					self.registers["A Register"].write_signed(self.registers["A Register"].read()) #twoscomplement applied on write()
 					if self.registers["A Register"].read_signed() == NEG_FULL_SCALE: #"minus full scale"
 						self.latch["overflow"] = True
 					self._increment_cycle_count()
 					self._increment_pc()
 
-				elif op.nmemonic == "CLA":
+				elif op.mnemonic == "CLA":
 					self.registers["A Register"].write(0)
 					self._increment_cycle_count()
 					self._increment_pc()
 
-				elif op.nmemonic == "TBA":
+				elif op.mnemonic == "TBA":
 					self.registers["A Register"].write(self.registers["B Register"].read())
 					self._increment_cycle_count()
 					self._increment_pc()
 					 
-				elif op.nmemonic == "TAB":
+				elif op.mnemonic == "TAB":
 					self.registers["B Register"].write(self.registers["A Register"].read())
 					self._increment_cycle_count()
 					self._increment_pc()
 
-				elif op.nmemonic == "IAB":
+				elif op.mnemonic == "IAB":
 					t = self.registers["A Register"].read()
 					self.registers["A Register"].write(self.registers["B Register"].read())
 					self.registers["B Register"].write(t)
 					self._increment_pc()
 					self._increment_cycle_count()
 					
-				elif op.nmemonic == "CSB":
+				elif op.mnemonic == "CSB":
 					if self.registers["B Register"].read() & 0x8000:
 						self.latch["carry"]  = True
 					else:
@@ -499,20 +501,20 @@ class SEL810CPU():
 					self._increment_pc()
 					self._increment_cycle_count()
 					
-				elif op.nmemonic == "RSA":
+				elif op.mnemonic == "RSA":
 					s  = self.registers["A Register"].read() & 0x8000
 					for i in range(op.fields["shifts"]):
 						self.registers["A Register"].write(s | (self.registers["A Register"].read() >> 1))
 					self._shift_cycle_timing(op.fields["shifts"])
 					self._increment_pc()
 
-				elif op.nmemonic == "LSA":
+				elif op.mnemonic == "LSA":
 					s  = self.registers["A Register"].read() & 0x8000
 					self.registers["A Register"].write(s | ((self.registers["A Register"].read() << op.fields["shifts"]) & 0x7fff))
 					self._shift_cycle_timing(op.fields["shifts"])
 					self._increment_pc()
 
-				elif op.nmemonic == "FRA":
+				elif op.mnemonic == "FRA":
 					s1  = self.registers["A Register"].read() & 0x8000
 					s2  = self.registers["B Register"].read() & 0x8000
 					r = ((self.registers["A Register"].read() & 0x7fff) << 15) | (self.registers["B Register"].read() & 0x7fff)
@@ -523,14 +525,14 @@ class SEL810CPU():
 					self._shift_cycle_timing(op.fields["shifts"])
 					self._increment_pc()
 
-				elif op.nmemonic == "FLL":
+				elif op.mnemonic == "FLL":
 					t = (((self.registers["A Register"].read() << 16) | self.registers["B Register"].read()) << op.fields["shifts"]) & 0xffffffff
 					self.registers["A Register"].write((t  >> 16) & 0xffff)
 					self.registers["B Register"].write((t & 0xffff))
 					self._shift_cycle_timing(op.fields["shifts"])
 					self._increment_pc()
 
-				elif op.nmemonic == "FRL":
+				elif op.mnemonic == "FRL":
 					for i in range(op.fields["shifts"]):
 						t = (((self.registers["A Register"].read() << 16) | self.registers["B Register"].read()) << 1)
 						b = t & (0x10000) >> 16
@@ -540,17 +542,17 @@ class SEL810CPU():
 					self._shift_cycle_timing(op.fields["shifts"])
 					self._increment_pc()
 
-				elif op.nmemonic == "RSL":
+				elif op.mnemonic == "RSL":
 					self.registers["A Register"].write(self.registers["A Register"].read() >> op.fields["shifts"])
 					self._shift_cycle_timing(op.fields["shifts"])
 					self._increment_pc()
 
-				elif op.nmemonic == "LSL":
+				elif op.mnemonic == "LSL":
 					self.registers["A Register"].write(self.registers["A Register"].read() << op.fields["shifts"])
 					self._shift_cycle_timing(op.fields["shifts"])
 					self._increment_pc()
 
-				elif op.nmemonic == "FLA":
+				elif op.mnemonic == "FLA":
 					s1  = self.registers["A Register"].read() & 0x8000
 					s2  = self.registers["B Register"].read() & 0x8000
 					r = ((((self.registers["A Register"].read() & 0x7fff) << 15) | (self.registers["B Register"].read() & 0x7fff))  << op.fields["shifts"]) & 0xffffffff
@@ -559,12 +561,12 @@ class SEL810CPU():
 					self._shift_cycle_timing(op.fields["shifts"])
 					self._increment_pc()
 					
-				elif op.nmemonic == "ASC":
+				elif op.mnemonic == "ASC":
 					self.registers["A Register"].write(self.registers["A Register"].read() ^ 0x8000)
 					self._increment_pc()
 					self._increment_cycle_count(1)
 					
-				elif op.nmemonic == "SAS":
+				elif op.mnemonic == "SAS":
 					if self.registers["A Register"].read_signed() == 0:
 						self._increment_pc()
 					elif self.registers["A Register"].read_signed() > 0:
@@ -572,25 +574,25 @@ class SEL810CPU():
 					self._increment_pc()
 					self._increment_cycle_count(1)
 
-				elif op.nmemonic == "SAZ":
+				elif op.mnemonic == "SAZ":
 					if self.registers["A Register"].read_signed() == 0:
 						self._increment_pc()
 					self._increment_cycle_count(1)
 					self._increment_pc()
 
-				elif op.nmemonic == "SAN":
+				elif op.mnemonic == "SAN":
 					if self.registers["A Register"].read_signed() < 0:
 						self._increment_pc()
 					self._increment_cycle_count(1)
 					self._increment_pc()
 
-				elif op.nmemonic == "SAP":
+				elif op.mnemonic == "SAP":
 					if self.registers["A Register"].read_signed() > 0:
 						self._increment_pc()
 					self._increment_cycle_count(1)
 					self._increment_pc()
 
-				elif op.nmemonic == "SOF":
+				elif op.mnemonic == "SOF":
 					if self.latch["overflow"] == True:#If the arithmetic overflow latch is set, it is reset and the next instruction is executed;
 						self.latch["overflow"] = False
 					else: #if the latch is reset, the next instruction is skipped.
@@ -598,7 +600,7 @@ class SEL810CPU():
 					self._increment_cycle_count(2)
 					self._increment_pc()
 
-				elif op.nmemonic == "IBS":
+				elif op.mnemonic == "IBS":
 					self.registers["B Register"].write_signed(self.registers["B Register"].read_signed() + 1)
 					if self.registers["B Register"].read_signed()  >= 0:
 						self._increment_pc(2)
@@ -606,32 +608,32 @@ class SEL810CPU():
 						self._increment_pc()
 					self._increment_cycle_count(1)
 						
-				elif op.nmemonic == "ABA":
+				elif op.mnemonic == "ABA":
 					self.registers["A Register"].write(self.registers["A Register"].read() & self.registers["B Register"].read())
 					self._increment_cycle_count(1)
 					self._increment_pc()
 
-				elif op.nmemonic == "OBA":
+				elif op.mnemonic == "OBA":
 					self.registers["A Register"].write(self.registers["A Register"].read() | self.registers["B Register"].read())
 					self._increment_cycle_count(1)
 					self._increment_pc()
 
-				elif op.nmemonic == "LCS":
+				elif op.mnemonic == "LCS":
 					self.registers["A Register"].write(self.registers["Control Panel Switches"].read())
 					self._increment_cycle_count(1)
 					self._increment_pc()
 
-				elif op.nmemonic == "SNO": #If bit A1 does not equal bit AO of the A~Accurnulator, the next instruction is skipped
+				elif op.mnemonic == "SNO": #If bit A1 does not equal bit AO of the A~Accurnulator, the next instruction is skipped
 					if(self.registers["A Register"].read() & 0x0001) != ((self.registers["A Register"].read() * 0x0002) >> 1):
 						self._increment_pc()
 					self._increment_cycle_count(1)
 					self._increment_pc()
 
-				elif op.nmemonic == "NOP":
+				elif op.mnemonic == "NOP":
 					self._increment_cycle_count(1)
 					self._increment_pc()
 
-				elif op.nmemonic == "CNS":
+				elif op.mnemonic == "CNS":
 					t =self.registers["A Register"].read()
 					tc = dec2twoscmplment(t & 0x7fff) |  (t & 0x8000)
 					self.registers["A Register"].write(tc)
@@ -640,25 +642,25 @@ class SEL810CPU():
 					self._increment_cycle_count(1)
 					self._increment_pc()
 					
-				elif op.nmemonic == "TOI": #fixme"
+				elif op.mnemonic == "TOI": #fixme"
 					#fixme When the TOI and BRU indirect (or LOB) instructions are executed following the interrupt subroutine, the protect latch is returned to the status present a t the time the interrupt occurred.
 					#The TOI instruction inhibits servicing the interrupt for one instruction to allow the BRU* to be executed at the exit of the interrupt routines. This is to insure that the proper active latch (A) is reset.
 					self._increment_cycle_count(1)
 					self._increment_pc()
 
-				elif op.nmemonic == "LOB":
+				elif op.mnemonic == "LOB":
 					#fixme When the TOI and BRU indirect (or LOB) instructions are executed following the interrupt subroutine, the protect latch is returned to the status present a t the time the interrupt occurred.
 					#f the Program Pro- tect and Instruction Trap option is included (and the Protect Mode switch is ON), when the LOB instruction is used fol- lowing a TOI instruction to exit from a priority interrupt rou- tine, the Protect Latch is set to the state of bit "0" of the effective address.
 					self.registers["Program Counter"].write(self.ram[self._next_pc()].read())
 					self._increment_cycle_count(2)
 					self._increment_pc(2)
 					
-				elif op.nmemonic == "OVS":
+				elif op.mnemonic == "OVS":
 					self.latch["overflow"] = True
 					self._increment_cycle_count(1)
 					self._increment_pc()
 
-				elif op.nmemonic == "STX": #
+				elif op.mnemonic == "STX": #
 					if op.fields["i"]: #address
 						self.ram[self._resolve_second_word_address(self.ram[self._next_pc].read())].write(self.registers["Index Register"])
 						self._increment_cycle_count()
@@ -667,37 +669,37 @@ class SEL810CPU():
 					self._increment_cycle_count(2)
 					self._increment_pc(2)
 						
-				elif op.nmemonic == "TPB":
+				elif op.mnemonic == "TPB":
 					self.registers["B Register"].write(self.registers["Protect Register"].read())
 					self._increment_cycle_count(1)
 					self._increment_pc()
 
-				elif op.nmemonic == "TBP":
+				elif op.mnemonic == "TBP":
 					self.registers["Protect Register"].write(self.registers["B Register"].read())
 					self._increment_cycle_count(1)
 					self._increment_pc()
 
-				elif op.nmemonic == "TPA": #lost instuction
+				elif op.mnemonic == "TPA": #lost instuction
 					self.registers["Protect Register"].write(self.registers["A Register"].read())
 					self._increment_cycle_count(1)
 					self._increment_pc()
 
-				elif op.nmemonic == "TAP": #lost instruction
+				elif op.mnemonic == "TAP": #lost instruction
 					self.registers["A Register"].write(self.registers["Protect Register"].read())
 					self._increment_cycle_count(1)
 					self._increment_pc()
 
-				elif op.nmemonic == "TBV":
+				elif op.mnemonic == "TBV":
 					self.registers["VBR Register"].write(self.registers["B Register"].read())
 					self._increment_cycle_count(1)
 					self._increment_pc()
 
-				elif op.nmemonic == "TVB":
+				elif op.mnemonic == "TVB":
 					self.registers["B Register"].write(self.registers["VBR Register"].read())
 					self._increment_cycle_count(1)
 					self._increment_pc()
 
-				elif op.nmemonic == "LIX":
+				elif op.mnemonic == "LIX":
 					if op.fields["i"]: #address
 						self.registers["Index Register"].write(self.ram[self._resolve_second_word_address(self.ram[self._next_pc].read())].read())
 						self._increment_cycle_count()
@@ -706,22 +708,22 @@ class SEL810CPU():
 					self._increment_cycle_count(2)
 					self._increment_pc(2)
 
-				elif op.nmemonic == "XPX":
+				elif op.mnemonic == "XPX":
 					self.latch["index_pointer"] = True
 					self._increment_cycle_count(1)
 					self._increment_pc()
 
-				elif op.nmemonic == "XPB":
+				elif op.mnemonic == "XPB":
 					self.latch["index_pointer"] = False
 					self._increment_cycle_count(1)
 					self._increment_pc()
 
-				elif op.nmemonic == "SXB":
+				elif op.mnemonic == "SXB":
 					self.ram[address].write_signed(self.registers["B Register"].read_signed())
 					self._increment_cycle_count(2)
 					self._increment_pc()
 
-				elif op.nmemonic == "IXS": #fixme hidden featuress
+				elif op.mnemonic == "IXS": #fixme hidden featuress
 					n = (self.registers["Instruction"].read() & 0x03c0) >> 6
 					if (self.registers["Index Register"].read_signed() + n) > 0:
 						self._increment_pc()
@@ -729,21 +731,21 @@ class SEL810CPU():
 					self._increment_cycle_count(1)
 					self._increment_pc()
 
-				elif op.nmemonic == "TAX":
+				elif op.mnemonic == "TAX":
 					self.registers["Index Register"].write_signed(self.registers["A Register"].read_signed())
 					self._increment_cycle_count(1)
 					self._increment_pc()
 
-				elif op.nmemonic == "TXA":
+				elif op.mnemonic == "TXA":
 					self.registers["A Register"].write_signed(self.registers["Index Register"].read_signed())
 					self._increment_cycle_count()
 					self._increment_pc()
 
-				elif op.nmemonic == "PID":
+				elif op.mnemonic == "PID":
 					self.registers["Interrupt"].write(self.registers["Interrupt"].read() ^ self.ram[self._next_pc()].read())
 					self._increment_pc(2)
 					
-				elif op.nmemonic == "PIE":
+				elif op.mnemonic == "PIE":
 					self.registers["Interrupt"].write( self.registers["Interrupt"].read() | self.ram[self._next_pc()].read())
 					self._increment_pc(2)
 					
@@ -751,7 +753,7 @@ class SEL810CPU():
 					self.latch["protect"]  = False #fixme
 									
 									
-				if op.nmemonic != "CSB": #the carry latch is reset at the end of the execution of all instructions except CSB
+				if op.mnemonic != "CSB": #the carry latch is reset at the end of the execution of all instructions except CSB
 					self.latch["carry"]  = False
 		else:
 			pass #this is an invalid opcode for this platform
@@ -932,10 +934,6 @@ class SEL810Shell(cmd.Cmd):
 			print("(op:%s)" % self.cpu.get_cpu_state()["assembler"]) #probably not the way to do this anymore
 		else:
 			print("cannot step while in io-wait")
-
-	def do_toggle_run_stop(self, arg):
-		'execute until a halt is recieved'
-		self.cpu.run()
 
 	def do_load(self, arg):
 		'load a binary file into memory at an address load [address] [filename]'
